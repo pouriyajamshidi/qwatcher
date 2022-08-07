@@ -1,0 +1,14 @@
+[Unit]
+Description=Queue Watcher Tool
+After=Network.target
+
+[Service]
+Type=simple
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/qwatcher --recv_q=100000 --send_q=100000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
