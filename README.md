@@ -90,6 +90,10 @@ Below output depicts the provided information for a connection:
 
 Apart from the send and receive queues, there are additional information that can be useful to diagnose connectivity issues such as `congestion window`, `mss`, `retransmits` and more.
 
+## Nimble Directory
+
+This project is also hosted on [Nimble](https://nimble.directory/pkg/qwatcher).
+
 ## Tested on
 
 Ubuntu server 22.04.
