@@ -29,6 +29,16 @@ Had they had this tool, they would have been able to find the root cause much fa
    1. Log mode (default): Logs the output to `/var/log/qwatcher.log`
    2. Monitor mode: Prints the output to the console with `--show_only` option
 
+> :warning: Make sure to not feed a higher number than your current buffer size to the program.
+> In order to get the current read and write buffer sizes, run the following commands:
+
+```bash
+cat /proc/sys/net/ipv4/tcp_rmem
+cat /proc/sys/net/ipv4/tcp_wmem
+```
+
+---
+
 Let's explore both modes:
 
 1. check every **5 seconds** and **log** connections that surpass **100 kilobytes** in **send** or **receive** queues in `/var/log/qwatcher.log`:
@@ -76,7 +86,7 @@ sudo systemctl start qwatcher.service
 
 Below output depicts the provided information for a connection:
 
-![output](images/qwatcher.png)
+![output](https://github.com/pouriyajamshidi/qwatcher/raw/master/images/qwatcher.png)
 
 Apart from the send and receive queues, there are additional information that can be useful to diagnose connectivity issues such as `congestion window`, `mss`, `retransmits` and more.
 
