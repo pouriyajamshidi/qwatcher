@@ -17,7 +17,11 @@ Had they had this tool, they would have been able to find the root cause much fa
    unzip qwatcher.zip
    ```
 
-   Additionally, you can use `Nimble`: <https://nimble.directory/pkg/qwatcher>
+   Additionally, you can use `Nimble`: <https://nimble.directory/pkg/qwatcher> and skip to step 3.
+
+   ```bash
+   nimble install qwatcher
+   ```
 
 2. Make it executable and if you prefer, move it to your `$PATH`:
 
