@@ -1,4 +1,4 @@
-import std/[osproc, nre, times, os, strformat, parseopt]
+import std/[osproc, nre, times, os, strformat, parseopt, db_sqlite]
 import strutils
 
 
@@ -31,6 +31,7 @@ proc usage() =
   --send_q,  INT    : Minimum send-Q to trigger alert in bytes (default: 10000)
   --refresh, INT    : Refresh interval in seconds (default: 10)
   --show_only,      : Show only the current state without logging to file
+  --to_db,             : write the state to a SQLite database named qwatcher.db
   -v, --version,    : Show version
 
   """
@@ -43,11 +44,12 @@ proc ensureCommandExists() =
 
 
 proc getArgs(): tuple =
-  var queues: tuple[
+  var flags: tuple[
         sendQ: int,
         recvQ: int,
         refresh: int,
-        showOnly: bool
+        showOnly: bool,
+        to_db: bool
     ]
 
   var p = initOptParser(commandLineParams())
@@ -59,28 +61,29 @@ proc getArgs(): tuple =
       of "help", "h": usage()
       of "version", "v": echo "Version: ", VERSION; quit()
       if p.key == "recv_q" and p.val == "":
-        queues.recvQ = 10000
+        flags.recvQ = 10000
       elif p.key == "recv_q":
-        queues.recvQ = parseInt(p.val)
+        flags.recvQ = parseInt(p.val)
       if p.key == "send_q" and p.val == "":
-        queues.sendQ = 10000
+        flags.sendQ = 10000
       elif p.key == "send_q":
-        queues.sendQ = parseInt(p.val)
+        flags.sendQ = parseInt(p.val)
       if p.key == "refresh" and p.val == "":
-        queues.refresh = TEN_SECONDS
+        flags.refresh = TEN_SECONDS
       elif p.key == "refresh" and parseInt(p.val) == 0:
         echo "Refresh interval must be greater than 0. Defaulting to 10 seconds"
       elif p.key == "refresh":
-        queues.refresh = parseInt(p.val)
-      if p.key == "show_only": queues.showOnly = true
+        flags.refresh = parseInt(p.val)
+      if p.key == "show_only": flags.showOnly = true
+      if p.key == "to_db": flags.to_db = true
     of cmdEnd: break
     of cmdArgument: discard
 
-  if queues.refresh <= 0: queues.refresh = TEN_SECONDS
-  if queues.sendQ == 0: queues.sendQ = 10000
-  if queues.recvQ == 0: queues.recvQ = 10000
+  if flags.refresh <= 0: flags.refresh = TEN_SECONDS
+  if flags.sendQ == 0: flags.sendQ = 10000
+  if flags.recvQ == 0: flags.recvQ = 10000
 
-  return queues
+  return flags
 
 
 proc getCurrentTime(): string =
@@ -113,13 +116,57 @@ proc getReport(queue: Queue): string =
   return report
 
 
-proc logReport(queue: var Queue, fileName: string) =
+proc logReportToFile(queue: var Queue, fileName: string) =
   let report = getReport(queue)
 
   let logFile = open(fileName, fmAppend)
   defer: logFile.close()
 
   logFile.writeLine(report)
+
+
+proc logReportToDatabase(queue: var Queue) =
+  let db = open("qwatcher.db", "", "", "")
+
+  db.exec(sql"""CREATE TABLE IF NOT EXISTS qwatcher
+                (
+                  id    INTEGER PRIMARY KEY,
+                  time  TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  receiveQ TEXT NOT NULL,
+                  sendQ TEXT NOT NULL,
+                  localAddress TEXT NOT NULL,
+                  remoteAddress TEXT NOT NULL,
+                  process TEXT NOT NULL,
+                  info TEXT NOT NULL,
+                )"""
+    )
+
+  db.exec(sql"BEGIN")
+
+  db.exec(sql"""INSERT INTO qwatcher
+                (
+                  time
+                  state
+                  receiveQ
+                  sendQ
+                  localAddress
+                  remoteAddress
+                  process
+                  info
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                getCurrentTime(),
+                queue.state,
+                queue.recvQ,
+                queue.sendQ,
+                queue.localAddr & ":" & queue.localPort,
+                queue.peerAddr & ":" & queue.peerPort,
+                queue.process,
+                queue.info
+  )
+
+  db.exec(sql"COMMIT")
+  db.close()
 
 
 proc displayReport(queue: var Queue) =
@@ -167,8 +214,10 @@ proc main() =
           parseint(generatedReport.sendQ) >= args.sendQ:
         if args.show_only:
           displayReport(generatedReport)
+        elif args.to_db:
+          logReportToDatabase(generatedReport)
         else:
-          logReport(generatedReport, LOG_FILE)
+          logReportToFile(generatedReport, LOG_FILE)
 
     sleep args.refresh
 
