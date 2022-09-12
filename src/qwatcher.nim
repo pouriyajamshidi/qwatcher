@@ -126,7 +126,7 @@ proc logReportToFile(queue: var Queue, fileName: string) =
 
 
 proc logReportToDatabase(queue: var Queue) =
-  let db = open("qwatcher.db", "", "", "")
+  let db = open("/home/scripts/qwatcher.db", "", "", "")
 
   db.exec(sql"""CREATE TABLE IF NOT EXISTS qwatcher
                 (
@@ -138,7 +138,7 @@ proc logReportToDatabase(queue: var Queue) =
                   localAddress TEXT NOT NULL,
                   remoteAddress TEXT NOT NULL,
                   process TEXT NOT NULL,
-                  info TEXT NOT NULL,
+                  info TEXT NOT NULL
                 )"""
     )
 
@@ -146,13 +146,13 @@ proc logReportToDatabase(queue: var Queue) =
 
   db.exec(sql"""INSERT INTO qwatcher
                 (
-                  time
-                  state
-                  receiveQ
-                  sendQ
-                  localAddress
-                  remoteAddress
-                  process
+                  time,
+                  state,
+                  receiveQ,
+                  sendQ,
+                  localAddress,
+                  remoteAddress,
+                  process,
                   info
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 getCurrentTime(),
