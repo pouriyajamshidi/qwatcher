@@ -32,11 +32,14 @@ Had they had this tool, they would have been able to find the root cause much fa
 
 3. Run it. There are two modes to run `qwatcher`.
 
-   1. Log mode (default): Logs the output to `/var/log/qwatcher.log`
-   2. Monitor mode: Prints the output to the console with `--show_only` option
+   1. **Write mode**. Provides two logging methods:
+      1. Using `--db_path` to log to a database. Default path: `/var/log/qwatcher.db`
+      2. Using `--log_path` to log to a text file. Default path: `/var/log/qwatcher.log`
+   2. **Monitor mode** (default). Prints the output to the console
 
 > :warning: Make sure to not feed a higher number than your current buffer size to the program.
-> In order to get the current read and write buffer sizes, run the following commands:
+
+In order to get the current read and write buffer sizes, run the following commands:
 
 ```bash
 cat /proc/sys/net/ipv4/tcp_rmem
@@ -45,12 +48,27 @@ cat /proc/sys/net/ipv4/tcp_wmem
 
 ---
 
-Let's explore both modes:
+Let's explore all modes:
 
-1. check every **5 seconds** and **log** connections that surpass **100 kilobytes** in **send** or **receive** queues in `/var/log/qwatcher.log`:
+1. check every **5 seconds** and **log** connections that surpass **100 kilobytes** in **send** or **receive** queues to a **database** located at `/var/log/qwatcher.db`:
 
    ```bash
-   qwatcher --recv_q=100000 --send_q=100000 --refresh=5
+   qwatcher --recv_q=100000 --send_q=100000 --refresh=5 --db_path=/var/log/qwatcher.db
+   ```
+
+   Then you can check the database. For instance, connections with `receive queue` bigger than zero:
+
+   ```bash
+   # Open the database file:
+   sqlite3 /var/log/qwatcher.db
+   # Run your query:
+   sqlite> SELECT * FROM qwatcher WHERE receiveQ > 0;
+   ```
+
+2. Should you prefer to log the stats in a **log file** instead of a database as shown in step 1 use `--log_path`:
+
+   ```bash
+   qwatcher --recv_q=100000 --send_q=100000 --refresh=5 --log_path=/var/log/qwatcher.log
    ```
 
    Then you can use tail to check the file contents:
@@ -59,7 +77,7 @@ Let's explore both modes:
    tail -f /var/log/qwatcher.log
    ```
 
-2. If you want the output to be shown on the **console** and not log to file, use the `--show_only` option:
+3. If you want the output to be shown on the **console** and not log to disk, use the `--show_only` option:
 
    ```bash
    qwatcher --recv_q=100000 --send_q=100000 --show_only
@@ -80,13 +98,17 @@ sudo systemctl start qwatcher.service
 ### Available flags
 
 ```console
-  -h, --help       : show help
-  --recv_q,        : Minimum receive-Q to trigger alert in bytes (default: 10000)
-  --send_q,        : Minimum send-Q to trigger alert in bytes (default: 10000)
-  --refresh,       : Refresh interval in seconds (default: 10)
-  --show_only,     : Show only the current state without logging to file
-  -v, --version,   : Show version
+  -h, --help        : show help
+  --recv_q,         : Minimum receive-Q to trigger alert in bytes (default: 10000)
+  --send_q,         : Minimum send-Q to trigger alert in bytes (default: 10000)
+  --refresh,        : Refresh interval in seconds (default: 10)
+  --show_only,      : Show only the current state without logging to file
+  --db_path,        : Path to SQLite database to log reports (default: /var/log/qwatcher.db)
+  --log_path,       : Path to log file to log reports (default: /var/log/qwatcher.log)
+  -v, --version,    : Show version
 ```
+
+> Please note that you cannot use `--db_path` and `--log_path` at the same time.
 
 ## What
 
