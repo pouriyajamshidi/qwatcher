@@ -2,10 +2,10 @@
 
 `qwatcher` is designed to help monitor TCP connections and diagnose **buffer** and connectivity issues on Linux machines related to `input` and `output` queues.
 
-<toc>
-   <summary>Table of Contents</summary>
+## Table of Contents
 
 - [Queue Watcher](#queue-watcher)
+  - [Table of Contents](#table-of-contents)
   - [Why](#why)
   - [How](#how)
     - [Usage](#usage)
@@ -16,8 +16,6 @@
   - [Sponsor me](#sponsor-me)
   - [Contact me](#contact-me)
   - [License](#license)
-
-</toc>
 
 ## Why
 
