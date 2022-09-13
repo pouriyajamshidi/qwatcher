@@ -3,20 +3,20 @@
 `qwatcher` is designed to help monitor TCP connections and diagnose **buffer** and connectivity issues on Linux machines related to `input` and `output` queues.
 
 <toc>
-   <sum>Table of Contents</sum>
-   <p>
-   - [Queue Watcher](#queue-watcher)
-   - [Why](#why)
-   - [How](#how)
-      - [Usage](#usage)
-      - [Available flags](#available-flags)
-   - [What](#what)
-   - [Nimble Directory](#nimble-directory)
-   - [Tested on](#tested-on)
-   - [Sponsor me](#sponsor-me)
-   - [Contact me](#contact-me)
-   - [License](#license)
-  </p>
+   <summary>Table of Contents</summary>
+
+- [Queue Watcher](#queue-watcher)
+  - [Why](#why)
+  - [How](#how)
+    - [Usage](#usage)
+    - [Available flags](#available-flags)
+  - [What](#what)
+  - [Nimble Directory](#nimble-directory)
+  - [Tested on](#tested-on)
+  - [Sponsor me](#sponsor-me)
+  - [Contact me](#contact-me)
+  - [License](#license)
+
 </toc>
 
 ## Why
