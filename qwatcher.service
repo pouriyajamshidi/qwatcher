@@ -5,7 +5,7 @@ After=Network.target
 [Service]
 Type=simple
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/qwatcher --recv_q=100000 --send_q=100000
+ExecStart=/usr/local/bin/qwatcher --recv_q=100000 --send_q=100000 --db_path=/var/log/qwatcher.db
 Restart=on-failure
 RestartSec=5
 
