@@ -58,6 +58,8 @@ Let's explore all modes:
 
    Then you can check the database. For instance, connections with `receive queue` bigger than zero:
 
+   > `sqlite3` needs to be installed.
+
    ```bash
    # Open the database file:
    sqlite3 /var/log/qwatcher.db
