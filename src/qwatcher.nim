@@ -7,8 +7,9 @@ const
   COMMAND = "ss -mito"
   TIME_FORMAT = "yyyy-MM-dd - H:mm:ss"
   LOG_FILE = "/var/log/qwatcher.log"
+  DB_FILE = "/var/log/qwatcher.db"
   TEN_SECONDS = 10000
-  VERSION = "0.1.0"
+  VERSION = "0.2.0"
 
 
 type Queue = object
@@ -30,8 +31,8 @@ proc usage() =
   --recv_q,  INT    : Minimum receive-Q to trigger alert in bytes (default: 10000)
   --send_q,  INT    : Minimum send-Q to trigger alert in bytes (default: 10000)
   --refresh, INT    : Refresh interval in seconds (default: 10)
-  --show_only,      : Show only the current state without logging to file
-  --to_db,             : write the state to a SQLite database named qwatcher.db
+  --db_path,        : Path to SQLite database to log reports (default: /var/log/qwatcher.db)
+  --log_path,       : Path to log file to log reports (default: /var/log/qwatcher.log)
   -v, --version,    : Show version
 
   """
@@ -48,8 +49,8 @@ proc getArgs(): tuple =
         sendQ: int,
         recvQ: int,
         refresh: int,
-        showOnly: bool,
-        to_db: bool
+        db: tuple[isSet: bool, path: string],
+        log: tuple[isSet: bool, path: string]
     ]
 
   var p = initOptParser(commandLineParams())
@@ -74,14 +75,22 @@ proc getArgs(): tuple =
         echo "Refresh interval must be greater than 0. Defaulting to 10 seconds"
       elif p.key == "refresh":
         flags.refresh = parseInt(p.val)
-      if p.key == "show_only": flags.showOnly = true
-      if p.key == "to_db": flags.to_db = true
+      if p.key == "db_path":
+        flags.db.isSet = true
+        flags.db.path = p.val
+      if p.key == "log_path":
+        flags.log.isSet = true
+        flags.log.path = p.val
     of cmdEnd: break
     of cmdArgument: discard
 
   if flags.refresh <= 0: flags.refresh = TEN_SECONDS
   if flags.sendQ == 0: flags.sendQ = 10000
   if flags.recvQ == 0: flags.recvQ = 10000
+  if flags.db.isSet and flags.db.path == "":
+    flags.db.path = DB_FILE
+  if flags.log.isSet and flags.log.path == "":
+    flags.log.path = LOG_FILE
 
   return flags
 
@@ -116,17 +125,17 @@ proc getReport(queue: Queue): string =
   return report
 
 
-proc logReportToFile(queue: var Queue, fileName: string) =
+proc logReportToFile(queue: var Queue, logFileName: string) =
   let report = getReport(queue)
 
-  let logFile = open(fileName, fmAppend)
+  let logFile = open(logFileName, fmAppend)
   defer: logFile.close()
 
   logFile.writeLine(report)
 
 
-proc logReportToDatabase(queue: var Queue) =
-  let db = open("/home/scripts/qwatcher.db", "", "", "")
+proc logReportToDatabase(queue: var Queue, databaseName: string) =
+  let db = open(databaseName, "", "", "")
 
   db.exec(sql"""CREATE TABLE IF NOT EXISTS qwatcher
                 (
@@ -207,17 +216,16 @@ proc main() =
       var line = result[item]
       var formattedLine = formatAndSplit(line)
       var additionalInfo = result[item + 1]
-
       var generatedReport = generateReport(formattedLine, additionalInfo)
 
       if parseint(generatedReport.recvQ) >= args.recvQ or
           parseint(generatedReport.sendQ) >= args.sendQ:
-        if args.show_only:
-          displayReport(generatedReport)
-        elif args.to_db:
-          logReportToDatabase(generatedReport)
+        if args.db.isSet:
+          logReportToDatabase(generatedReport, args.db.path)
+        elif args.log.isSet:
+          logReportToFile(generatedReport, args.log.path)
         else:
-          logReportToFile(generatedReport, LOG_FILE)
+          displayReport(generatedReport)
 
     sleep args.refresh
 
