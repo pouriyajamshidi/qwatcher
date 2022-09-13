@@ -79,10 +79,10 @@ Let's explore all modes:
    tail -f /var/log/qwatcher.log
    ```
 
-3. If you want the output to be shown on the **console** and not log to disk, use the `--show_only` option:
+3. **Default mode**. If you want the output to be shown on the **console** and not log to disk, use the commands above without `--log_path` or `--db_path` options:
 
    ```bash
-   qwatcher --recv_q=100000 --send_q=100000 --show_only
+   qwatcher --recv_q=100000 --send_q=100000
    ```
 
    > The default refresh interval is 10 seconds.
@@ -104,7 +104,6 @@ sudo systemctl start qwatcher.service
   --recv_q,         : Minimum receive-Q to trigger alert in bytes (default: 10000)
   --send_q,         : Minimum send-Q to trigger alert in bytes (default: 10000)
   --refresh,        : Refresh interval in seconds (default: 10)
-  --show_only,      : Show only the current state without logging to file
   --db_path,        : Path to SQLite database to log reports (default: /var/log/qwatcher.db)
   --log_path,       : Path to log file to log reports (default: /var/log/qwatcher.log)
   -v, --version,    : Show version
