@@ -80,6 +80,10 @@ Let's explore all modes:
    ```bash
    # Open the database file:
    sqlite3 /var/log/qwatcher.db
+   # Beautify sqlite output:
+   .mode line
+   .headers on
+   .separator ROW "\n"
    # Run your query:
    sqlite> SELECT * FROM qwatcher WHERE receiveQ > 0;
    ```
