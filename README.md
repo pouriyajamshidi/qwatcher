@@ -1,6 +1,17 @@
 # Queue Watcher
 
+<!-- ![qwatcher](artwork/qwatcher.png) -->
+<!-- <img src="https://github.com/pouriyajamshidi/qwatcher/blob/master/artwork/qwatcher.png?raw=true" width="600" /> -->
+
+<div align="center" style="width: 100%;">
+ <img alt="qwatcher" src="https://github.com/pouriyajamshidi/qwatcher/blob/master/artwork/qwatcher.png?raw=true" width="700">
+</div>
+
+---
+
 `qwatcher` is designed to help monitor TCP connections and diagnose **buffer** and connectivity issues on Linux machines related to `input` and `output` queues.
+
+---
 
 ## Table of Contents
 
@@ -17,11 +28,15 @@
   - [Contact me](#contact-me)
   - [License](#license)
 
+---
+
 ## Why
 
 The idea of writing this program came to me after reading a few blog posts discussing how they faced odd connectivity issues and how it ended up being related to the send and receive queues.
 
 Had they had this tool, they would have been able to find the root cause much faster.
+
+---
 
 ## How
 
@@ -131,6 +146,8 @@ sudo systemctl start qwatcher.service
 ```
 
 > Please note that you cannot use `--db_path` and `--log_path` at the same time.
+
+---
 
 ## What
 
