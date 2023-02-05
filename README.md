@@ -40,14 +40,14 @@ Had they had this tool, they would have been able to find the root cause much fa
 
 ## How
 
-1. Download and unzip the archive file from this URL:
+1. Download and extract the file from this URL:
 
    ```bash
-   wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatcher.zip
-   unzip qwatcher.zip
+   wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatcher.tar.gz
+   tar xvf qwatcher.tar.gz
    ```
 
-   Additionally, you can use `Nimble`: <https://nimble.directory/pkg/qwatcher> and skip to step 3.
+   Optionally, you can use `Nimble` for installation <https://nimble.directory/pkg/qwatcher> and skip to step 3.
 
    ```bash
    nimble install qwatcher
