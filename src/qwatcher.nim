@@ -1,15 +1,17 @@
-import std/[osproc, nre, times, os, strformat, parseopt, db_sqlite]
+import std/[osproc, nre, times, os, strformat]
+import db_connector/db_sqlite
 import strutils
+from parseopt import CmdLineKind, initOptParser, next
 
 
 
 const
   COMMAND = "ss -mito"
   TIME_FORMAT = "yyyy-MM-dd - H:mm:ss"
-  LOG_FILE = "/var/log/qwatcher.log"
-  DB_FILE = "/var/log/qwatcher.db"
+  LOG_PATH = "/var/log/qwatcher.log"
+  DB_PATH = "/var/log/qwatcher.db"
   TEN_SECONDS = 10000
-  VERSION = "0.2.0"
+  VERSION = "0.3.0"
 
 
 type Queue = object
@@ -24,75 +26,80 @@ type Queue = object
   info: string
 
 
-proc usage() =
+type
+  Flags = tuple[
+    sendQ: int,
+    recvQ: int,
+    refresh: int,
+    dbPath: string,
+    logPath: string,
+    stdout: bool
+  ]
+
+
+proc usage(exitCode: int=0) =
   echo """
 
-  -h, --help        : show help
-  --recv_q,  INT    : Minimum receive-Q to trigger alert in bytes (default: 10000)
-  --send_q,  INT    : Minimum send-Q to trigger alert in bytes (default: 10000)
-  --refresh, INT    : Refresh interval in seconds (default: 10)
-  --db_path,        : Path to SQLite database to log reports (default: /var/log/qwatcher.db)
-  --log_path,       : Path to log file to log reports (default: /var/log/qwatcher.log)
-  -v, --version,    : Show version
+  --recv_q,   INT    : Minimum receive-Q to trigger alert in bytes (default: 10000)
+  --send_q,   INT    : Minimum send-Q to trigger alert in bytes (default: 10000)
+  --refresh,  INT    : Refresh interval in seconds (default: 10)
+  --db_path,  STRING : Path to SQLite database to log reports (e.g. /var/log/qwatcher.db)
+  --log_path, STRING : Path to log file to log reports
+  --stdout,   BOOL   : Output to stdout only
+  -h, --help         : show help
+  -v, --version,     : Show version
 
   """
-  quit()
+  quit(exitCode)
+
+
+proc getArgs(): Flags =
+  var flags: Flags = (sendQ: 10000,
+                      recvQ: 10000,
+                      refresh: TEN_SECONDS,
+                      dbPath: "",
+                      logPath: "",
+                      stdout: false
+  )
+
+  var p = initOptParser()
+
+  while true:
+    p.next()
+    case p.kind
+    of cmdEnd: break
+    of cmdLongOption, cmdShortOption:
+      case p.key
+      of "help", "h": usage()
+      of "version", "v": echo "Version: ", VERSION; quit()
+      of "recv_q": flags.recvQ = if p.val == "": 10000 else: parseInt(p.val)
+      of "send_q": flags.sendQ = if p.val == "": 10000 else: parseInt(p.val)
+      of "refresh": flags.refresh = if p.val == "": TEN_SECONDS else: parseInt(p.val)
+      of "db_path": flags.dbPath = p.val
+      of "log_path": flags.logPath = p.val
+      of "stdout": flags.stdout = parseBool(p.val)
+    of cmdArgument: discard
+    next(p)
+
+  if flags.dbPath == "" and flags.logPath == "":
+    echo "Specify either db_path or log_path flags"
+    usage(1)
+
+  if flags.stdout and flags.dbPath.len() != 0 or flags.logPath.len() != 0:
+    flags.dbPath = ""
+
+  if not flags.stdout and flags.dbPath.len() != 0 and flags.logPath.len() != 0:
+    echo "Specify one of db_path, log_path or stdout flags"
+    usage(1)
+
+  echo "Starting with flags: ", $flags
+
+  return flags
 
 
 proc ensureCommandExists() =
   let result = findExe("ss")
   if result == "": quit("ss command not found", 1)
-
-
-proc getArgs(): tuple =
-  var flags: tuple[
-        sendQ: int,
-        recvQ: int,
-        refresh: int,
-        db: tuple[isSet: bool, path: string],
-        log: tuple[isSet: bool, path: string]
-    ]
-
-  var p = initOptParser(commandLineParams())
-
-  for kind, key, val in p.getopt():
-    case kind
-    of cmdLongOption, cmdShortOption:
-      case key
-      of "help", "h": usage()
-      of "version", "v": echo "Version: ", VERSION; quit()
-      if p.key == "recv_q" and p.val == "":
-        flags.recvQ = 10000
-      elif p.key == "recv_q":
-        flags.recvQ = parseInt(p.val)
-      if p.key == "send_q" and p.val == "":
-        flags.sendQ = 10000
-      elif p.key == "send_q":
-        flags.sendQ = parseInt(p.val)
-      if p.key == "refresh" and p.val == "":
-        flags.refresh = TEN_SECONDS
-      elif p.key == "refresh" and parseInt(p.val) == 0:
-        echo "Refresh interval must be greater than 0. Defaulting to 10 seconds"
-      elif p.key == "refresh":
-        flags.refresh = parseInt(p.val)
-      if p.key == "db_path":
-        flags.db.isSet = true
-        flags.db.path = p.val
-      if p.key == "log_path":
-        flags.log.isSet = true
-        flags.log.path = p.val
-    of cmdEnd: break
-    of cmdArgument: discard
-
-  if flags.refresh <= 0: flags.refresh = TEN_SECONDS
-  if flags.sendQ == 0: flags.sendQ = 10000
-  if flags.recvQ == 0: flags.recvQ = 10000
-  if flags.db.isSet and flags.db.path == "":
-    flags.db.path = DB_FILE
-  if flags.log.isSet and flags.log.path == "":
-    flags.log.path = LOG_FILE
-
-  return flags
 
 
 proc getCurrentTime(): string =
@@ -220,10 +227,10 @@ proc main() =
 
       if parseint(generatedReport.recvQ) >= args.recvQ or
           parseint(generatedReport.sendQ) >= args.sendQ:
-        if args.db.isSet:
-          logReportToDatabase(generatedReport, args.db.path)
-        elif args.log.isSet:
-          logReportToFile(generatedReport, args.log.path)
+        if args.dbPath.len != 0:
+          logReportToDatabase(generatedReport, args.dbPath)
+        elif args.logPath.len != 0:
+          logReportToFile(generatedReport, args.logPath)
         else:
           displayReport(generatedReport)
 
