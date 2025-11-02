@@ -37,17 +37,23 @@ type
   ]
 
 
-proc usage(exitCode: int=0) =
+proc usage(exitCode: int = 0) =
   echo """
 
-  --recv_q,   INT    : Minimum receive-Q to trigger alert in bytes (default: 10000)
-  --send_q,   INT    : Minimum send-Q to trigger alert in bytes (default: 10000)
-  --refresh,  INT    : Refresh interval in seconds (default: 10)
-  --db_path,  STRING : Path to SQLite database to log reports (e.g. /var/log/qwatcher.db)
-  --log_path, STRING : Path to log file to log reports
-  --stdout,   BOOL   : Output to stdout only
-  -h, --help         : show help
-  -v, --version,     : Show version
+  --recv_q,   INT               : Minimum Receive Queue in bytes to trigger a report (default: 10000)
+  --send_q,   INT               : Minimum Send Queue in bytes to trigger a report (default: 10000)
+  --refresh,  INT               : Refresh interval in seconds (default: 10)
+  --db_path,  STRING            : Path to create an SQLite database to log reports (default: /var/log/qwatcher.db)
+  --log_path, STRING (Optional) : Path to log file to write reports (default: /var/log/qwatcher.log)
+  --stdout,   BOOL              : Output reports only to the stdout
+  -h, --help                    : show help
+  -v, --version,                : Show version
+
+  For instance:
+
+  qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
+  qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
+  qwatcher --recv_q:100000 --send_q:100000 --stdout:true
 
   """
   quit(exitCode)
@@ -89,7 +95,7 @@ proc getArgs(): Flags =
     flags.dbPath = ""
 
   if not flags.stdout and flags.dbPath.len() != 0 and flags.logPath.len() != 0:
-    echo "Specify one of db_path, log_path or stdout flags"
+    echo "Specify one of --db_path, --log_path or --stdout flags"
     usage(1)
 
   echo "Starting with flags: ", $flags
@@ -190,7 +196,7 @@ proc displayReport(queue: var Queue) =
 
 
 proc generateReport(line: var seq[string], additionalInfo: var string): Queue =
-  if len(line) < 5: quit("Cannot process `ss` output", 1)
+  if len(line) < 5: quit(fmt"Cannot process `ss` output: {line}", 1)
 
   var queue: Queue
 
