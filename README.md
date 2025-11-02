@@ -136,13 +136,20 @@ sudo systemctl start qwatcher.service
 ### Available flags
 
 ```console
-  -h, --help        : show help
-  --recv_q,         : Minimum receive-Q to trigger alert in bytes (default: 10000)
-  --send_q,         : Minimum send-Q to trigger alert in bytes (default: 10000)
-  --refresh,        : Refresh interval in seconds (default: 10)
-  --db_path,        : Path to SQLite database to log reports (default: /var/log/qwatcher.db)
-  --log_path,       : Path to log file to log reports (default: /var/log/qwatcher.log)
-  -v, --version,    : Show version
+  --recv_q,   INT               : Minimum Receive Queue in bytes to trigger a report (default: 10000)
+  --send_q,   INT               : Minimum Send Queue in bytes to trigger a report (default: 10000)
+  --refresh,  INT               : Refresh interval in seconds (default: 10)
+  --db_path,  STRING            : Path to create an SQLite database to log reports (default: /var/log/qwatcher.db)
+  --log_path, STRING (Optional) : Path to log file to write reports (default: /var/log/qwatcher.log)
+  --stdout,   BOOL              : Output reports only to the stdout
+  -h, --help                    : show help
+  -v, --version,                : Show version
+
+  For instance:
+
+  qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
+  qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
+  qwatcher --recv_q:100000 --send_q:100000 --stdout:true
 ```
 
 > Please note that you cannot use `--db_path` and `--log_path` at the same time.

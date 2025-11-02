@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.3.0"
+version       = "0.4.0"
 author        = "Pouriya Jamshidi"
 description   = "Linux NIC Buffer Queue Watcher"
 license       = "MIT"
@@ -10,4 +10,4 @@ bin           = @["qwatcher"]
 
 # Dependencies
 
-requires "nim >= 2.0.2"
+requires "nim >= 2.2.6"
