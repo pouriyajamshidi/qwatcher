@@ -28,6 +28,7 @@ It talks to the kernel directly over `NETLINK_SOCK_DIAG` — the same interface 
   - [How](#how)
     - [Usage](#usage)
     - [Available flags](#available-flags)
+    - [Choosing a refresh interval](#choosing-a-refresh-interval)
   - [What](#what)
   - [Querying the database](#querying-the-database)
   - [Nimble Directory](#nimble-directory)
@@ -208,7 +209,7 @@ Let's explore all modes:
    qwatcher --recv_q=100000 --send_q=100000
    ```
 
-   > The default refresh interval is 10 seconds.
+   > The default refresh interval is 5 seconds.
 
 The sample output can be seen [here](#what)
 
@@ -219,10 +220,13 @@ To keep it running in the background, see [Run it as a service](#run-it-as-a-ser
 ```console
   --recv_q,   INT    : Minimum Receive Queue in bytes to trigger a report (default: 10000)
   --send_q,   INT    : Minimum Send Queue in bytes to trigger a report (default: 10000)
-  --refresh,  INT    : Refresh interval in seconds (default: 10)
+  --refresh,  INT    : Refresh interval in seconds (default: 5)
   --db_path,  STRING : Path to an SQLite database to log reports to
   --log_path, STRING : Path to a log file to write reports to
   --stdout           : Print reports to the console (default)
+  --report           : Print the reports already stored in --db_path and exit
+  --limit,    INT    : How many reports --report prints, newest last (default: 20)
+  --follow           : Keep printing reports as they are stored, like `tail -f`
   -h, --help         : Show help
   -v, --version      : Show version
 
@@ -231,7 +235,19 @@ To keep it running in the background, see [Run it as a service](#run-it-as-a-ser
   qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
   qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
   qwatcher --recv_q:100000 --send_q:100000 --stdout
+
+  qwatcher --db_path:/var/log/qwatcher.db --report
+  qwatcher --db_path:/var/log/qwatcher.db --report --limit:100
+  qwatcher --db_path:/var/log/qwatcher.db --follow
 ```
+
+### Choosing a refresh interval
+
+A poll costs about 9 ms on a host with ~100 connections and about 19 ms with ~4000, plus
+roughly 45 ms to name the processes whenever something actually breaches. So even
+`--refresh:1` costs only a few percent of one core — the real cost of a short interval is
+row volume in the database, not CPU. The 5 second default is a reasonable standing watch;
+drop to `--refresh:1` while actively chasing a problem.
 
 > Please note that `--db_path`, `--log_path` and `--stdout` are mutually exclusive.
 
@@ -257,6 +273,34 @@ when diagnosing a stuck queue:
 | `retrans`| Currently outstanding / total retransmits, shown when non-zero |
 
 ## Querying the database
+
+The quickest way to read a database back is `qwatcher` itself — no `sqlite3` needed, and
+the output is formatted exactly like the log file and the console:
+
+```bash
+qwatcher --db_path:/var/log/qwatcher.db --report
+```
+
+It prints the 20 most recent reports, newest last, the way `tail` does. Use `--limit` for
+more:
+
+```bash
+qwatcher --db_path:/var/log/qwatcher.db --report --limit:100
+```
+
+`--follow` is the `tail -f` equivalent: it prints the recent reports and then keeps
+printing new ones as the running `qwatcher` stores them, until you interrupt it.
+
+```bash
+qwatcher --db_path:/var/log/qwatcher.db --follow
+```
+
+It checks for new rows every `--refresh` seconds, so pair it with the interval the writer
+is using. Because the database is in WAL mode, all of this works while `qwatcher` is
+running and writing to that same file.
+
+For anything beyond reading reports back — grouping, filtering, aggregating — use `sqlite3`
+directly.
 
 > `sqlite3` needs to be installed.
 

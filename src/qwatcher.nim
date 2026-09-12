@@ -1,4 +1,4 @@
-import std/[os, posix, strformat, strutils, tables, times]
+import std/[os, posix, sets, strformat, strutils, tables, times]
 import db_connector/db_sqlite
 import tcpdiag
 
@@ -8,7 +8,8 @@ const
   VERSION = "0.5.0"
   TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss"
   DEFAULT_QUEUE = 10_000
-  DEFAULT_REFRESH = 10
+  DEFAULT_REFRESH = 5
+  DEFAULT_LIMIT = 20
   DELIM = "=".repeat(70)
   OWNER_ONLY = {fpUserRead, fpUserWrite}
 
@@ -41,8 +42,11 @@ type
     recvQ: int
     sendQ: int
     refresh: int
+    limit: int
     path: string
     output: OutputKind
+    report: bool
+    follow: bool
 
 var running = true
 
@@ -51,10 +55,13 @@ proc usage(exitCode: int = 0) =
   echo """
   --recv_q,   INT    : Minimum Receive Queue in bytes to trigger a report (default: 10000)
   --send_q,   INT    : Minimum Send Queue in bytes to trigger a report (default: 10000)
-  --refresh,  INT    : Refresh interval in seconds (default: 10)
+  --refresh,  INT    : Refresh interval in seconds (default: 5)
   --db_path,  STRING : Path to an SQLite database to log reports to
   --log_path, STRING : Path to a log file to write reports to
   --stdout           : Print reports to the console (default)
+  --report           : Print the reports already stored in --db_path and exit
+  --limit,    INT    : How many reports --report prints, newest last (default: 20)
+  --follow           : Keep printing reports as they are stored, like `tail -f`
   -h, --help         : Show help
   -v, --version      : Show version
 
@@ -63,6 +70,10 @@ proc usage(exitCode: int = 0) =
   qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
   qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
   qwatcher --recv_q:100000 --send_q:100000 --stdout
+
+  qwatcher --db_path:/var/log/qwatcher.db --report
+  qwatcher --db_path:/var/log/qwatcher.db --report --limit:100
+  qwatcher --db_path:/var/log/qwatcher.db --follow
 """
   quit(exitCode)
 
@@ -94,7 +105,8 @@ proc boolFlag(key, value: string): bool =
 
 proc getArgs(): Flags =
   result = Flags(recvQ: DEFAULT_QUEUE, sendQ: DEFAULT_QUEUE,
-                 refresh: DEFAULT_REFRESH, output: toStdout)
+                 refresh: DEFAULT_REFRESH, limit: DEFAULT_LIMIT,
+                 output: toStdout)
 
   var dbPath, logPath: string
   var explicitStdout = false
@@ -114,6 +126,9 @@ proc getArgs(): Flags =
       of "db_path": dbPath = parser.val
       of "log_path": logPath = parser.val
       of "stdout": explicitStdout = boolFlag(parser.key, parser.val)
+      of "report": result.report = boolFlag(parser.key, parser.val)
+      of "limit": result.limit = positiveInt(parser.key, parser.val, DEFAULT_LIMIT)
+      of "follow": result.follow = boolFlag(parser.key, parser.val)
       else: fail(&"Unknown flag: {parser.key}")
     of cmdArgument: fail(&"Unexpected argument: {parser.key}")
 
@@ -121,6 +136,12 @@ proc getArgs(): Flags =
     fail("Specify only one of --db_path or --log_path")
   if explicitStdout and (dbPath.len != 0 or logPath.len != 0):
     fail("--stdout cannot be combined with --db_path or --log_path")
+
+  if result.follow:
+    result.report = true
+
+  if result.report and dbPath.len == 0:
+    fail("--report and --follow need --db_path to read from")
 
   if dbPath.len != 0:
     result.output = toDatabase
@@ -151,9 +172,66 @@ Info:           {conn.info}
 {DELIM}"""
 
 
-proc processesByInode(): Table[uint32, string] =
-  ## Maps socket inodes to the process holding them. Only readable for
-  ## processes we own, so running as root gives the full picture.
+const REPORT_COLUMNS = """
+  id, time, state, receiveQ, sendQ, localAddress, localPort,
+  remoteAddress, remotePort, process, info"""
+
+
+proc rowToReport(row: Row): string =
+  report(Conn(
+    state: row[2],
+    recvQ: parseInt(row[3]),
+    sendQ: parseInt(row[4]),
+    localAddr: row[5],
+    localPort: parseInt(row[6]),
+    peerAddr: row[7],
+    peerPort: parseInt(row[8]),
+    process: row[9],
+    info: row[10],
+  ), row[1])
+
+
+proc printReports(path: string, limit, refresh: int, follow: bool) =
+  if not fileExists(path):
+    quit(&"No database at {path}", 1)
+
+  let db = open(path, "", "", "")
+  defer: db.close()
+
+  var recent: seq[Row]
+  for row in db.fastRows(sql("SELECT " & REPORT_COLUMNS &
+                             " FROM qwatcher ORDER BY id DESC LIMIT ?"), limit):
+    recent.add row
+
+  if recent.len == 0 and not follow:
+    echo "No reports stored in ", path
+    return
+
+  for i in countdown(recent.high, 0):
+    echo rowToReport(recent[i])
+
+  if not follow:
+    return
+
+  var lastId = if recent.len > 0: parseInt(recent[0][0]) else: 0
+  let newer = sql("SELECT " & REPORT_COLUMNS &
+                  " FROM qwatcher WHERE id > ? ORDER BY id ASC")
+
+  while running:
+    for _ in 1 .. refresh:
+      if not running: break
+      sleep 1000
+
+    for row in db.fastRows(newer, lastId):
+      if not running: break
+      echo rowToReport(row)
+      lastId = parseInt(row[0])
+
+
+proc processesByInode(wanted: HashSet[uint32]): Table[uint32, string] =
+  ## Maps the given socket inodes to the process holding them, giving up as soon
+  ## as all of them are found. Only readable for processes we own, so running as
+  ## root gives the full picture.
   for kind, pidPath in walkDir("/proc"):
     if kind != pcDir: continue
 
@@ -178,9 +256,12 @@ proc processesByInode(): Table[uint32, string] =
         except ValueError:
           continue
 
+        if inode notin wanted: continue
+
         if name.len == 0:
           name = try: readFile(pidPath / "comm").strip() except CatchableError: pid
         result[inode] = &"{name}(pid={pid},fd={fdPath.lastPathPart})"
+        if result.len == wanted.len: return
     except OSError:
       discard
 
@@ -230,6 +311,10 @@ proc main() =
   onSignal(SIGINT, SIGTERM):
     running = false
 
+  if args.report:
+    printReports(args.path, args.limit, args.refresh, args.follow)
+    return
+
   var db: DbConn
   var statement: SqlPrepared
   if args.output == toDatabase:
@@ -238,17 +323,21 @@ proc main() =
 
   while running:
     var breached: seq[Conn]
-    var processes: Table[uint32, string]
+    var wanted: HashSet[uint32]
 
     for conn in queryTcp():
       if conn.recvQ < args.recvQ and conn.sendQ < args.sendQ:
         continue
-      if breached.len == 0:
-        processes = processesByInode()
       breached.add conn
-      breached[^1].process = processes.getOrDefault(conn.inode, "No process")
+      # Orphaned sockets report inode 0 and can never be traced to a process.
+      if conn.inode != 0:
+        wanted.incl conn.inode
 
     if breached.len != 0:
+      let processes = processesByInode(wanted)
+      for conn in breached.mitems:
+        conn.process = processes.getOrDefault(conn.inode, "No process")
+
       let timestamp = currentTime()
       case args.output
       of toDatabase: writeToDatabase(db, statement, breached, timestamp)
@@ -267,6 +356,6 @@ proc main() =
 when isMainModule:
   try:
     main()
-  except TcpDiagError, DbError, IOError, OSError:
+  except TcpDiagError, DbError, IOError, OSError, ValueError:
     stderr.writeLine getCurrentExceptionMsg()
     quit(1)
