@@ -5,7 +5,9 @@ import tcpdiag
 from parseopt import CmdLineKind, initOptParser, next
 
 const
-  VERSION = "0.5.0"
+  # Set by nimble from the version in qwatcher.nimble, so the two cannot drift.
+  NimblePkgVersion {.strdefine.} = "dev"
+  VERSION = NimblePkgVersion
   TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss"
   DEFAULT_QUEUE = 10_000
   DEFAULT_REFRESH = 5

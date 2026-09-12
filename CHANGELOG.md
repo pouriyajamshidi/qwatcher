@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.1] - 2026-09-12
+
 ### Added
 
 - `--report` prints the reports already stored in an SQLite database and exits, formatted
@@ -68,8 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`ss` is no longer used.** Connection data now comes from the kernel directly over
   `NETLINK_SOCK_DIAG`, the same interface `ss` uses. No subprocess is spawned, no command
-  output is parsed and no regular expressions are involved, which also drops the PCRE
-  dependency. The binary now links only against `libc`.
+  output is parsed and no regular expressions are involved.
+- **`libpcre` is no longer required.** Versions up to 0.4.0 used the `nre` regular
+  expression module to parse `ss` output, which loaded `libpcre` at startup. On a host
+  without it, those builds fail immediately with
+  `could not load: libpcre.so(.3|.1|)`, even for `--version`. Upgrading to 0.5.0 removes
+  that dependency. The binary now links against `libc` and loads only `libsqlite3`.
 - The `Info` field is trimmed to what diagnosing a stuck queue actually needs: `skmem`,
   `rto`, `rtt`, `minrtt`, `mss`, `cwnd` and `retrans`.
 - SQLite handling follows the usual practice for a long running writer. The database is
@@ -111,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 See the [releases page](https://github.com/pouriyajamshidi/qwatcher/releases) for earlier
 history.
 
-[Unreleased]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/pouriyajamshidi/qwatcher/releases/tag/v0.4.0

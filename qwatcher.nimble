@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.5.0"
+version       = "0.5.1"
 author        = "Pouriya Jamshidi"
 description   = "Linux NIC Buffer Queue Watcher"
 license       = "MIT"
@@ -25,6 +25,9 @@ task release, "Build an optimized binary and bundle it with the systemd unit":
   mkDir dist
 
   exec "nimble build -d:release --passL:-s -y"
+
+  # Guard against the binary and the package version drifting apart.
+  exec "./qwatcher --version | grep -q " & version
 
   # cpFile does not preserve the executable bit, so install the binary instead.
   exec "install -m 755 qwatcher " & dist & "/qwatcher"

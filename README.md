@@ -56,6 +56,9 @@ every mode, so that library must be present even when you are not using `--db_pa
 ships with virtually every distribution; install `libsqlite3-0` (Debian/Ubuntu) or
 `sqlite-libs` (RHEL/Fedora/Alpine) if it is missing.
 
+SQLite is loaded from the system rather than linked in, so `qwatcher` uses whatever
+version and build the host provides.
+
 ### From a release
 
 ```bash
