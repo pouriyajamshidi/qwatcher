@@ -31,6 +31,7 @@ It talks to the kernel directly over `NETLINK_SOCK_DIAG` — the same interface 
     - [Choosing a refresh interval](#choosing-a-refresh-interval)
   - [What](#what)
   - [Querying the database](#querying-the-database)
+  - [Changelog](#changelog)
   - [Nimble Directory](#nimble-directory)
   - [Tested on](#tested-on)
   - [Sponsor me](#sponsor-me)
@@ -334,6 +335,10 @@ CREATE TABLE qwatcher (
   info          TEXT    NOT NULL
 );
 ```
+
+## Changelog
+
+Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Nimble Directory
 
