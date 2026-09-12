@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Build against the oldest supported glibc so the binary runs on older distributions.
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.12"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(awk -F'"' '/^version/ {print $2}' qwatcher.nimble)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $version in qwatcher.nimble" >&2
+            exit 1
+          fi
+
+      - name: Build the release archive
+        run: nimble release -y
+
+      - name: Verify the archive
+        run: |
+          tar tzvf qwatcher.tar.gz
+          mkdir -p verify && tar xzf qwatcher.tar.gz -C verify
+          test -x verify/qwatcher
+          test -f verify/qwatcher.service
+          ./verify/qwatcher --version
+          # Exits 1 if the netlink query fails; 124 means it polled happily until killed.
+          timeout 5 ./verify/qwatcher --recv_q:999999999 --send_q:999999999 || test $? -eq 124
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" qwatcher.tar.gz --generate-notes
