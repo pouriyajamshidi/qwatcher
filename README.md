@@ -182,8 +182,8 @@ cat /proc/sys/net/ipv4/tcp_wmem
 
 Two flags carry units that are easy to mix up:
 
-| Flag                   | Unit        | Meaning                                       |
-| ---------------------- | ----------- | --------------------------------------------- |
+| Flag                   | Unit        | Meaning                                        |
+| ---------------------- | ----------- | ---------------------------------------------- |
 | `--recv_q`, `--send_q` | **bytes**   | How full a queue must be to be worth reporting |
 | `--refresh`            | **seconds** | How often to ask the kernel                    |
 
@@ -309,15 +309,15 @@ console, the log file and `--report`.
 Apart from the send and receive queues, the `Info` field carries the numbers that matter
 when diagnosing a stuck queue:
 
-| Field    | Meaning                                                       |
-| -------- | ------------------------------------------------------------- |
-| `skmem`  | `r`/`rb` receive buffer used/limit, `t`/`tb` send buffer used/limit |
-| `rto`    | Retransmission timeout in milliseconds                        |
-| `rtt`    | Round trip time / variance in milliseconds                    |
-| `minrtt` | Lowest round trip time observed on the connection             |
-| `mss`    | Maximum segment size                                          |
-| `cwnd`   | Congestion window in segments                                 |
-| `retrans`| Currently outstanding / total retransmits, shown when non-zero |
+| Field     | Meaning                                                             |
+| --------- | ------------------------------------------------------------------- |
+| `skmem`   | `r`/`rb` receive buffer used/limit, `t`/`tb` send buffer used/limit |
+| `rto`     | Retransmission timeout in milliseconds                              |
+| `rtt`     | Round trip time / variance in milliseconds                          |
+| `minrtt`  | Lowest round trip time observed on the connection                   |
+| `mss`     | Maximum segment size                                                |
+| `cwnd`    | Congestion window in segments                                       |
+| `retrans` | Currently outstanding / total retransmits, shown when non-zero      |
 
 ## Querying the database
 
@@ -397,7 +397,7 @@ Ubuntu server 22.04. Requires Linux 3.3 or newer for the `sock_diag` interface.
 
 ## Sponsor me
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/pouriyajamshidi)  
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/pouriyajamshidi)
 [![sponsor](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/pouriyajamshidi)
 
 ## Contact me
