@@ -77,7 +77,7 @@ intend to use the systemd unit, which expects it there.
 
 ### From source
 
-Requires Nim `>= 2.2.6`. Nimble pulls in the only dependency, `db_connector`.
+Requires Nim `>= 2.2.12`. Nimble pulls in the only dependency, `db_connector`.
 
 ```bash
 git clone https://github.com/pouriyajamshidi/qwatcher.git && \
