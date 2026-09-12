@@ -63,6 +63,9 @@ wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatch
   qwatcher --version
 ```
 
+The archive also carries `qwatcher.service`, so you have everything you need for
+[running it as a service](#run-it-as-a-service).
+
 ### With Nimble
 
 ```bash
@@ -84,6 +87,9 @@ git clone https://github.com/pouriyajamshidi/qwatcher.git && \
   qwatcher --version
 ```
 
+To produce the same stripped binary and `qwatcher.tar.gz` that the releases are built
+from, run `nimble release` instead of `nimble build`.
+
 ### Run it as a service
 
 The [accompanying systemd unit](qwatcher.service) keeps `qwatcher` running in the
@@ -91,21 +97,20 @@ background and across reboots. It runs as `root`, which is what lets it name the
 behind each connection, and it is sandboxed (`ProtectSystem=strict`, `PrivateDevices`,
 `RestrictAddressFamilies=AF_NETLINK`, and friends).
 
-Fetch the unit, install it and start it — this works regardless of how you installed the
-binary above:
+`qwatcher.service` ships in the release archive and in the repository, so from either one:
 
 ```bash
-sudo curl -fsSL -o /etc/systemd/system/qwatcher.service \
-  https://raw.githubusercontent.com/pouriyajamshidi/qwatcher/master/qwatcher.service && \
+sudo cp qwatcher.service /etc/systemd/system/qwatcher.service && \
   sudo systemctl daemon-reload && \
   sudo systemctl enable --now qwatcher.service && \
   systemctl status qwatcher.service --no-pager
 ```
 
-If you cloned the repository, use the local copy instead of downloading it:
+If you installed with `nimble install`, you only got the binary — fetch the unit first:
 
 ```bash
-sudo cp qwatcher.service /etc/systemd/system/qwatcher.service && \
+sudo curl -fsSL -o /etc/systemd/system/qwatcher.service \
+  https://raw.githubusercontent.com/pouriyajamshidi/qwatcher/master/qwatcher.service && \
   sudo systemctl daemon-reload && \
   sudo systemctl enable --now qwatcher.service && \
   systemctl status qwatcher.service --no-pager
