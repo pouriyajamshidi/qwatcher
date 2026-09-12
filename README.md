@@ -57,9 +57,10 @@ missing.
 ### From a release
 
 ```bash
-wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatcher.tar.gz
-tar xvf qwatcher.tar.gz
-sudo install -m 755 qwatcher /usr/local/bin/qwatcher
+wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatcher.tar.gz && \
+  tar xvf qwatcher.tar.gz && \
+  sudo install -m 755 qwatcher /usr/local/bin/qwatcher && \
+  qwatcher --version
 ```
 
 ### With Nimble
@@ -76,16 +77,11 @@ intend to use the systemd unit, which expects it there.
 Requires Nim `>= 2.2.6`. Nimble pulls in the only dependency, `db_connector`.
 
 ```bash
-git clone https://github.com/pouriyajamshidi/qwatcher.git
-cd qwatcher
-nimble build -d:release
-sudo install -m 755 qwatcher /usr/local/bin/qwatcher
-```
-
-Check that it runs:
-
-```bash
-qwatcher --version
+git clone https://github.com/pouriyajamshidi/qwatcher.git && \
+  cd qwatcher && \
+  nimble build -d:release && \
+  sudo install -m 755 qwatcher /usr/local/bin/qwatcher && \
+  qwatcher --version
 ```
 
 ### Run it as a service
@@ -95,35 +91,57 @@ background and across reboots. It runs as `root`, which is what lets it name the
 behind each connection, and it is sandboxed (`ProtectSystem=strict`, `PrivateDevices`,
 `RestrictAddressFamilies=AF_NETLINK`, and friends).
 
-1. Edit the `ExecStart=` line in `qwatcher.service` to set your own thresholds and output
-   path. The shipped default is:
+Fetch the unit, install it and start it — this works regardless of how you installed the
+binary above:
 
-   ```ini
-   ExecStart=/usr/local/bin/qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
-   ```
+```bash
+sudo curl -fsSL -o /etc/systemd/system/qwatcher.service \
+  https://raw.githubusercontent.com/pouriyajamshidi/qwatcher/master/qwatcher.service && \
+  sudo systemctl daemon-reload && \
+  sudo systemctl enable --now qwatcher.service && \
+  systemctl status qwatcher.service --no-pager
+```
 
-   > :warning: The sandbox only grants write access to `/var/log` via `ReadWritePaths=`.
-   > If you point `--db_path` or `--log_path` somewhere else, add that directory to
-   > `ReadWritePaths=` too. Otherwise the service exits with
-   > `unable to open database file` and restart-loops.
+If you cloned the repository, use the local copy instead of downloading it:
 
-2. Install and start it:
+```bash
+sudo cp qwatcher.service /etc/systemd/system/qwatcher.service && \
+  sudo systemctl daemon-reload && \
+  sudo systemctl enable --now qwatcher.service && \
+  systemctl status qwatcher.service --no-pager
+```
 
-   ```bash
-   sudo cp qwatcher.service /etc/systemd/system/qwatcher.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now qwatcher.service
-   ```
+It starts with these defaults, which you can change at any time:
 
-3. Confirm it is healthy:
+```ini
+ExecStart=/usr/local/bin/qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
+```
 
-   ```bash
-   systemctl status qwatcher.service
-   journalctl -u qwatcher.service -f
-   ```
+To use your own thresholds or output path, edit the unit and reload:
 
-To stop it, `sudo systemctl disable --now qwatcher.service`. A clean stop lets `qwatcher`
-close the database properly, so no `-wal` file is left behind.
+```bash
+sudo systemctl edit --full qwatcher.service && \
+  sudo systemctl restart qwatcher.service && \
+  systemctl status qwatcher.service --no-pager
+```
+
+> :warning: The sandbox only grants write access to `/var/log` via `ReadWritePaths=`.
+> If you point `--db_path` or `--log_path` somewhere else, add that directory to
+> `ReadWritePaths=` too. Otherwise the service exits with
+> `unable to open database file` and restart-loops.
+
+Follow it live, or stop it entirely:
+
+```bash
+journalctl -u qwatcher.service -f
+```
+
+```bash
+sudo systemctl disable --now qwatcher.service
+```
+
+A clean stop lets `qwatcher` close the database properly, so no `-wal` file is left
+behind.
 
 ---
 
