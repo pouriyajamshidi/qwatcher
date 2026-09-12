@@ -1,247 +1,272 @@
-import std/[osproc, nre, times, os, strformat]
+import std/[os, posix, strformat, strutils, tables, times]
 import db_connector/db_sqlite
-import strutils
+import tcpdiag
+
 from parseopt import CmdLineKind, initOptParser, next
 
-
-
 const
-  COMMAND = "ss -mito"
-  TIME_FORMAT = "yyyy-MM-dd - H:mm:ss"
-  LOG_PATH = "/var/log/qwatcher.log"
-  DB_PATH = "/var/log/qwatcher.db"
-  TEN_SECONDS = 10000
-  VERSION = "0.3.0"
+  VERSION = "0.5.0"
+  TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss"
+  DEFAULT_QUEUE = 10_000
+  DEFAULT_REFRESH = 10
+  DELIM = "=".repeat(70)
+  OWNER_ONLY = {fpUserRead, fpUserWrite}
 
+  SCHEMA = sql"""
+    CREATE TABLE IF NOT EXISTS qwatcher (
+      id            INTEGER PRIMARY KEY,
+      time          TEXT    NOT NULL,
+      state         TEXT    NOT NULL,
+      receiveQ      INTEGER NOT NULL,
+      sendQ         INTEGER NOT NULL,
+      localAddress  TEXT    NOT NULL,
+      localPort     INTEGER NOT NULL,
+      remoteAddress TEXT    NOT NULL,
+      remotePort    INTEGER NOT NULL,
+      process       TEXT    NOT NULL,
+      info          TEXT    NOT NULL
+    )"""
 
-type Queue = object
-  state: string
-  recvQ: string
-  sendQ: string
-  localAddr: string
-  localPort: string
-  peerAddr: string
-  peerPort: string
-  process: string
-  info: string
-
+  INSERT_REPORT = """
+    INSERT INTO qwatcher
+      (time, state, receiveQ, sendQ, localAddress, localPort,
+       remoteAddress, remotePort, process, info)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
 type
-  Flags = tuple[
-    sendQ: int,
-    recvQ: int,
-    refresh: int,
-    dbPath: string,
-    logPath: string,
-    stdout: bool
-  ]
+  OutputKind = enum
+    toStdout, toFile, toDatabase
+
+  Flags = object
+    recvQ: int
+    sendQ: int
+    refresh: int
+    path: string
+    output: OutputKind
+
+var running = true
 
 
 proc usage(exitCode: int = 0) =
   echo """
-
-  --recv_q,   INT               : Minimum Receive Queue in bytes to trigger a report (default: 10000)
-  --send_q,   INT               : Minimum Send Queue in bytes to trigger a report (default: 10000)
-  --refresh,  INT               : Refresh interval in seconds (default: 10)
-  --db_path,  STRING            : Path to create an SQLite database to log reports (default: /var/log/qwatcher.db)
-  --log_path, STRING (Optional) : Path to log file to write reports (default: /var/log/qwatcher.log)
-  --stdout,   BOOL              : Output reports only to the stdout
-  -h, --help                    : show help
-  -v, --version,                : Show version
+  --recv_q,   INT    : Minimum Receive Queue in bytes to trigger a report (default: 10000)
+  --send_q,   INT    : Minimum Send Queue in bytes to trigger a report (default: 10000)
+  --refresh,  INT    : Refresh interval in seconds (default: 10)
+  --db_path,  STRING : Path to an SQLite database to log reports to
+  --log_path, STRING : Path to a log file to write reports to
+  --stdout           : Print reports to the console (default)
+  -h, --help         : Show help
+  -v, --version      : Show version
 
   For instance:
 
   qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
   qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
-  qwatcher --recv_q:100000 --send_q:100000 --stdout:true
-
-  """
+  qwatcher --recv_q:100000 --send_q:100000 --stdout
+"""
   quit(exitCode)
 
 
-proc getArgs(): Flags =
-  var flags: Flags = (sendQ: 10000,
-                      recvQ: 10000,
-                      refresh: TEN_SECONDS,
-                      dbPath: "",
-                      logPath: "",
-                      stdout: false
-  )
+proc fail(message: string) =
+  stderr.writeLine message
+  usage(1)
 
-  var p = initOptParser()
+
+proc positiveInt(key, value: string, fallback: int): int =
+  if value.len == 0:
+    return fallback
+  try:
+    result = parseInt(value)
+  except ValueError:
+    fail(&"--{key} expects a number, got '{value}'")
+  if result <= 0:
+    fail(&"--{key} must be greater than zero")
+
+
+proc boolFlag(key, value: string): bool =
+  if value.len == 0:
+    return true
+  try:
+    result = parseBool(value)
+  except ValueError:
+    fail(&"--{key} expects true or false, got '{value}'")
+
+
+proc getArgs(): Flags =
+  result = Flags(recvQ: DEFAULT_QUEUE, sendQ: DEFAULT_QUEUE,
+                 refresh: DEFAULT_REFRESH, output: toStdout)
+
+  var dbPath, logPath: string
+  var explicitStdout = false
+  var parser = initOptParser()
 
   while true:
-    p.next()
-    case p.kind
+    parser.next()
+    case parser.kind
     of cmdEnd: break
     of cmdLongOption, cmdShortOption:
-      case p.key
+      case parser.key
       of "help", "h": usage()
       of "version", "v": echo "Version: ", VERSION; quit()
-      of "recv_q": flags.recvQ = if p.val == "": 10000 else: parseInt(p.val)
-      of "send_q": flags.sendQ = if p.val == "": 10000 else: parseInt(p.val)
-      of "refresh": flags.refresh = if p.val == "": TEN_SECONDS else: parseInt(p.val)
-      of "db_path": flags.dbPath = p.val
-      of "log_path": flags.logPath = p.val
-      of "stdout": flags.stdout = parseBool(p.val)
-    of cmdArgument: discard
-    next(p)
+      of "recv_q": result.recvQ = positiveInt(parser.key, parser.val, DEFAULT_QUEUE)
+      of "send_q": result.sendQ = positiveInt(parser.key, parser.val, DEFAULT_QUEUE)
+      of "refresh": result.refresh = positiveInt(parser.key, parser.val, DEFAULT_REFRESH)
+      of "db_path": dbPath = parser.val
+      of "log_path": logPath = parser.val
+      of "stdout": explicitStdout = boolFlag(parser.key, parser.val)
+      else: fail(&"Unknown flag: {parser.key}")
+    of cmdArgument: fail(&"Unexpected argument: {parser.key}")
 
-  if flags.dbPath == "" and flags.logPath == "":
-    echo "Specify either db_path or log_path flags"
-    usage(1)
+  if dbPath.len != 0 and logPath.len != 0:
+    fail("Specify only one of --db_path or --log_path")
+  if explicitStdout and (dbPath.len != 0 or logPath.len != 0):
+    fail("--stdout cannot be combined with --db_path or --log_path")
 
-  if flags.stdout and flags.dbPath.len() != 0 or flags.logPath.len() != 0:
-    flags.dbPath = ""
-
-  if not flags.stdout and flags.dbPath.len() != 0 and flags.logPath.len() != 0:
-    echo "Specify one of --db_path, --log_path or --stdout flags"
-    usage(1)
-
-  echo "Starting with flags: ", $flags
-
-  return flags
+  if dbPath.len != 0:
+    result.output = toDatabase
+    result.path = dbPath
+  elif logPath.len != 0:
+    result.output = toFile
+    result.path = logPath
 
 
-proc ensureCommandExists() =
-  let result = findExe("ss")
-  if result == "": quit("ss command not found", 1)
-
-
-proc getCurrentTime(): string =
+proc currentTime(): string =
   now().format(TIME_FORMAT)
 
 
-proc formatAndSplit(s: var string): seq[string] =
-  s.strip().replace(re"\s+", " ").split(" ")
+proc endpoint(address: string, port: int): string =
+  if ':' in address: &"[{address}]:{port}" else: &"{address}:{port}"
 
 
-proc execCommand(command: string): seq[string] =
-  osproc.execProcess(command = COMMAND).splitLines()
+proc report(conn: Conn, timestamp: string): string =
+  &"""{DELIM}
+Time:           {timestamp}
+State:          {conn.state}
+Receive-Q:      {conn.recvQ}
+Send-Q:         {conn.sendQ}
+Local Address:  {endpoint(conn.localAddr, conn.localPort)}
+Remote Address: {endpoint(conn.peerAddr, conn.peerPort)}
+Process:        {conn.process}
+Info:           {conn.info}
+{DELIM}"""
 
 
-proc getReport(queue: Queue): string =
-  let delim = "=".repeat(70)
-  var report = ""
+proc processesByInode(): Table[uint32, string] =
+  ## Maps socket inodes to the process holding them. Only readable for
+  ## processes we own, so running as root gives the full picture.
+  for kind, pidPath in walkDir("/proc"):
+    if kind != pcDir: continue
 
-  report.add(&"{delim}\n")
-  report.add(&"Time:\t\t{getCurrentTime()}\n")
-  report.add(&"State:\t\t{queue.state}\n")
-  report.add(&"Receive-Q:\t{queue.recvQ}\n")
-  report.add(&"Send-Q:\t\t{queue.sendQ}\n")
-  report.add(&"Local Address:\t{queue.localAddr}:{queue.localPort}\n")
-  report.add(&"Remote Address:\t{queue.peerAddr}:{queue.peerPort}\n")
-  report.add(&"Process:\t{queue.process}\n\n")
-  report.add(&"Info:\t{queue.info}\n\n")
-  report.add(&"{delim}\n")
+    let pid = pidPath.lastPathPart
+    if pid.len == 0 or not pid.allCharsInSet(Digits): continue
 
-  return report
+    var name = ""
+    try:
+      for _, fdPath in walkDir(pidPath / "fd"):
+        var target: string
+        try:
+          target = expandSymlink(fdPath)
+        except OSError:
+          continue
+
+        if not target.startsWith("socket:[") or not target.endsWith("]"):
+          continue
+
+        var inode: uint32
+        try:
+          inode = uint32(parseUInt(target["socket:[".len ..< target.high]))
+        except ValueError:
+          continue
+
+        if name.len == 0:
+          name = try: readFile(pidPath / "comm").strip() except CatchableError: pid
+        result[inode] = &"{name}(pid={pid},fd={fdPath.lastPathPart})"
+    except OSError:
+      discard
 
 
-proc logReportToFile(queue: var Queue, logFileName: string) =
-  let report = getReport(queue)
+proc openDatabase(path: string): DbConn =
+  result = open(path, "", "", "")
+  # WAL keeps readers (sqlite3, dashboards) from blocking the writer, and lets
+  # NORMAL synchronous skip an fsync per commit without risking corruption.
+  result.exec(sql"PRAGMA journal_mode = WAL")
+  result.exec(sql"PRAGMA synchronous = NORMAL")
+  result.exec(sql"PRAGMA busy_timeout = 5000")
+  result.exec(SCHEMA)
+  result.exec(sql"CREATE INDEX IF NOT EXISTS qwatcher_time_idx ON qwatcher(time)")
+  setFilePermissions(path, OWNER_ONLY)
 
-  let logFile = open(logFileName, fmAppend)
-  defer: logFile.close()
 
-  logFile.writeLine(report)
-
-
-proc logReportToDatabase(queue: var Queue, databaseName: string) =
-  let db = open(databaseName, "", "", "")
-
-  db.exec(sql"""CREATE TABLE IF NOT EXISTS qwatcher
-                (
-                  id    INTEGER PRIMARY KEY,
-                  time  TEXT NOT NULL,
-                  state TEXT NOT NULL,
-                  receiveQ TEXT NOT NULL,
-                  sendQ TEXT NOT NULL,
-                  localAddress TEXT NOT NULL,
-                  remoteAddress TEXT NOT NULL,
-                  process TEXT NOT NULL,
-                  info TEXT NOT NULL
-                )"""
-    )
-
+proc writeToDatabase(db: DbConn, statement: SqlPrepared, conns: seq[Conn],
+                     timestamp: string) =
   db.exec(sql"BEGIN")
-
-  db.exec(sql"""INSERT INTO qwatcher
-                (
-                  time,
-                  state,
-                  receiveQ,
-                  sendQ,
-                  localAddress,
-                  remoteAddress,
-                  process,
-                  info
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                getCurrentTime(),
-                queue.state,
-                queue.recvQ,
-                queue.sendQ,
-                queue.localAddr & ":" & queue.localPort,
-                queue.peerAddr & ":" & queue.peerPort,
-                queue.process,
-                queue.info
-  )
-
-  db.exec(sql"COMMIT")
-  db.close()
+  try:
+    for conn in conns:
+      db.exec(statement, timestamp, conn.state, conn.recvQ, conn.sendQ,
+              conn.localAddr, conn.localPort, conn.peerAddr, conn.peerPort,
+              conn.process, conn.info)
+    db.exec(sql"COMMIT")
+  except DbError:
+    db.exec(sql"ROLLBACK")
+    raise
 
 
-proc displayReport(queue: var Queue) =
-  echo getReport(queue)
+proc writeToFile(path: string, conns: seq[Conn], timestamp: string) =
+  let file = open(path, fmAppend)
+  defer: file.close()
+  setFilePermissions(path, OWNER_ONLY)
+  for conn in conns:
+    file.writeLine report(conn, timestamp)
 
 
-proc generateReport(line: var seq[string], additionalInfo: var string): Queue =
-  if len(line) < 5: quit(fmt"Cannot process `ss` output: {line}", 1)
-
-  var queue: Queue
-
-  queue.state = line[0]
-  queue.recvQ = line[1]
-  queue.sendQ = line[2]
-  queue.localAddr = line[3].split(":")[0]
-  queue.localPort = line[3].split(":")[1]
-  queue.peerAddr = line[4].split(":")[0]
-  queue.peerPort = line[4].split(":")[1]
-
-  if len(line) > 5:
-    queue.process = line[5]
-  else:
-    queue.process = "No process"
-
-  queue.info = additionalInfo.strip()
-
-  return queue
+proc writeToStdout(conns: seq[Conn], timestamp: string) =
+  for conn in conns:
+    echo report(conn, timestamp)
 
 
 proc main() =
-  ensureCommandExists()
   let args = getArgs()
 
-  while true:
-    let result = execCommand(COMMAND)
+  onSignal(SIGINT, SIGTERM):
+    running = false
 
-    for item in countup(1, len(result) - 2, 2):
-      var line = result[item]
-      var formattedLine = formatAndSplit(line)
-      var additionalInfo = result[item + 1]
-      var generatedReport = generateReport(formattedLine, additionalInfo)
+  var db: DbConn
+  var statement: SqlPrepared
+  if args.output == toDatabase:
+    db = openDatabase(args.path)
+    statement = db.prepare(INSERT_REPORT)
 
-      if parseint(generatedReport.recvQ) >= args.recvQ or
-          parseint(generatedReport.sendQ) >= args.sendQ:
-        if args.dbPath.len != 0:
-          logReportToDatabase(generatedReport, args.dbPath)
-        elif args.logPath.len != 0:
-          logReportToFile(generatedReport, args.logPath)
-        else:
-          displayReport(generatedReport)
+  while running:
+    var breached: seq[Conn]
+    var processes: Table[uint32, string]
 
-    sleep args.refresh
+    for conn in queryTcp():
+      if conn.recvQ < args.recvQ and conn.sendQ < args.sendQ:
+        continue
+      if breached.len == 0:
+        processes = processesByInode()
+      breached.add conn
+      breached[^1].process = processes.getOrDefault(conn.inode, "No process")
+
+    if breached.len != 0:
+      let timestamp = currentTime()
+      case args.output
+      of toDatabase: writeToDatabase(db, statement, breached, timestamp)
+      of toFile: writeToFile(args.path, breached, timestamp)
+      of toStdout: writeToStdout(breached, timestamp)
+
+    for _ in 1 .. args.refresh:
+      if not running: break
+      sleep 1000
+
+  if args.output == toDatabase:
+    statement.finalize()
+    db.close()
 
 
-when is_main_module:
-  main()
+when isMainModule:
+  try:
+    main()
+  except TcpDiagError, DbError, IOError, OSError:
+    stderr.writeLine getCurrentExceptionMsg()
+    quit(1)
