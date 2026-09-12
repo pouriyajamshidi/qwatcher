@@ -1,3 +1,6 @@
 nimble.develop
 nimble.paths
 nimbledeps
+dist
+qwatcher.tar.gz
+/qwatcher
