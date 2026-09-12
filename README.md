@@ -11,6 +11,8 @@
 
 `qwatcher` is designed to help monitor TCP connections and diagnose **buffer** and connectivity issues on Linux machines related to `input` and `output` queues.
 
+It talks to the kernel directly over `NETLINK_SOCK_DIAG` — the same interface `ss` uses — so it has no external dependencies, spawns no processes and parses no command output.
+
 ---
 
 ## Table of Contents
@@ -18,10 +20,16 @@
 - [Queue Watcher](#queue-watcher)
   - [Table of Contents](#table-of-contents)
   - [Why](#why)
+  - [Install](#install)
+    - [From a release](#from-a-release)
+    - [With Nimble](#with-nimble)
+    - [From source](#from-source)
+    - [Run it as a service](#run-it-as-a-service)
   - [How](#how)
     - [Usage](#usage)
     - [Available flags](#available-flags)
   - [What](#what)
+  - [Querying the database](#querying-the-database)
   - [Nimble Directory](#nimble-directory)
   - [Tested on](#tested-on)
   - [Sponsor me](#sponsor-me)
@@ -38,34 +46,101 @@ Had they had this tool, they would have been able to find the root cause much fa
 
 ---
 
+## Install
+
+`qwatcher` is a single binary that talks to the kernel directly — it needs no `ss`, no
+`iproute2` and no shell. Beyond `libc`, its only runtime requirement is `libsqlite3`, and
+only when you use `--db_path`. That library ships with virtually every distribution;
+install `libsqlite3-0` (Debian/Ubuntu) or `sqlite-libs` (RHEL/Fedora/Alpine) if it is
+missing.
+
+### From a release
+
+```bash
+wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatcher.tar.gz
+tar xvf qwatcher.tar.gz
+sudo install -m 755 qwatcher /usr/local/bin/qwatcher
+```
+
+### With Nimble
+
+```bash
+nimble install qwatcher
+```
+
+This drops the binary in `~/.nimble/bin/qwatcher`. Copy it to `/usr/local/bin` if you
+intend to use the systemd unit, which expects it there.
+
+### From source
+
+Requires Nim `>= 2.2.6`. Nimble pulls in the only dependency, `db_connector`.
+
+```bash
+git clone https://github.com/pouriyajamshidi/qwatcher.git
+cd qwatcher
+nimble build -d:release
+sudo install -m 755 qwatcher /usr/local/bin/qwatcher
+```
+
+Check that it runs:
+
+```bash
+qwatcher --version
+```
+
+### Run it as a service
+
+The [accompanying systemd unit](qwatcher.service) keeps `qwatcher` running in the
+background and across reboots. It runs as `root`, which is what lets it name the process
+behind each connection, and it is sandboxed (`ProtectSystem=strict`, `PrivateDevices`,
+`RestrictAddressFamilies=AF_NETLINK`, and friends).
+
+1. Edit the `ExecStart=` line in `qwatcher.service` to set your own thresholds and output
+   path. The shipped default is:
+
+   ```ini
+   ExecStart=/usr/local/bin/qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
+   ```
+
+   > :warning: The sandbox only grants write access to `/var/log` via `ReadWritePaths=`.
+   > If you point `--db_path` or `--log_path` somewhere else, add that directory to
+   > `ReadWritePaths=` too. Otherwise the service exits with
+   > `unable to open database file` and restart-loops.
+
+2. Install and start it:
+
+   ```bash
+   sudo cp qwatcher.service /etc/systemd/system/qwatcher.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now qwatcher.service
+   ```
+
+3. Confirm it is healthy:
+
+   ```bash
+   systemctl status qwatcher.service
+   journalctl -u qwatcher.service -f
+   ```
+
+To stop it, `sudo systemctl disable --now qwatcher.service`. A clean stop lets `qwatcher`
+close the database properly, so no `-wal` file is left behind.
+
+---
+
 ## How
 
-1. Download and extract the file from this URL:
+There are two modes to run `qwatcher`.
 
-   ```bash
-   wget https://github.com/pouriyajamshidi/qwatcher/releases/latest/download/qwatcher.tar.gz
-   tar xvf qwatcher.tar.gz
-   ```
+1. **Write mode**. Provides two logging methods:
+   1. Using `--db_path` to log to an SQLite database
+   2. Using `--log_path` to log to a text file
+2. **Monitor mode** (default). Prints the output to the console
 
-   Optionally, you can use `Nimble` for installation <https://nimble.directory/pkg/qwatcher> and skip to step 3.
+Both write modes create their file with `0600` permissions, since the reports contain the
+addresses and processes of every connection on the host.
 
-   ```bash
-   nimble install qwatcher
-   ```
-
-2. Make it executable and if you prefer, move it to your `$PATH`:
-
-   ```bash
-   chmod +x qwatcher
-   sudo cp qwatcher /usr/local/bin
-   ```
-
-3. Run it. There are two modes to run `qwatcher`.
-
-   1. **Write mode**. Provides two logging methods:
-      1. Using `--db_path` to log to a database. Default path: `/var/log/qwatcher.db`
-      2. Using `--log_path` to log to a text file. Default path: `/var/log/qwatcher.log`
-   2. **Monitor mode** (default). Prints the output to the console
+> :bulb: Run `qwatcher` as `root` to see the process behind each connection. Without it,
+> only your own processes can be identified — everything else is reported as `No process`.
 
 > :warning: Make sure to not feed a higher number than your current buffer size to the program.
 
@@ -88,20 +163,9 @@ Let's explore all modes:
    qwatcher --recv_q=100000 --send_q=100000 --refresh=5 --db_path=/var/log/qwatcher.db
    ```
 
-   Then you can check the database. For instance, connections with `receive queue` bigger than zero:
-
-   > `sqlite3` needs to be installed.
-
-   ```bash
-   # Open the database file:
-   sqlite3 /var/log/qwatcher.db
-   # Beautify sqlite output:
-   .mode line
-   .headers on
-   .separator ROW "\n"
-   # Run your query:
-   sqlite> SELECT * FROM qwatcher WHERE receiveQ > 0;
-   ```
+   The database is opened in [WAL](https://www.sqlite.org/wal.html) mode, so you can
+   query it at any time without interrupting the running `qwatcher`. See
+   [Querying the database](#querying-the-database).
 
 2. Should you prefer to log the stats in a **log file** instead of a database as shown in step 1 use `--log_path`:
 
@@ -125,34 +189,28 @@ Let's explore all modes:
 
 The sample output can be seen [here](#what)
 
-Additionally, you can use the [accompanying systemd](qwatcher.service) service to run `qwatcher` in the background and not worry about system restarts:
-
-```bash
-sudo cp qwatcher.service /etc/systemd/system/qwatcher.service
-sudo systemctl enable qwatcher.service
-sudo systemctl start qwatcher.service
-```
+To keep it running in the background, see [Run it as a service](#run-it-as-a-service).
 
 ### Available flags
 
 ```console
-  --recv_q,   INT               : Minimum Receive Queue in bytes to trigger a report (default: 10000)
-  --send_q,   INT               : Minimum Send Queue in bytes to trigger a report (default: 10000)
-  --refresh,  INT               : Refresh interval in seconds (default: 10)
-  --db_path,  STRING            : Path to create an SQLite database to log reports (default: /var/log/qwatcher.db)
-  --log_path, STRING (Optional) : Path to log file to write reports (default: /var/log/qwatcher.log)
-  --stdout,   BOOL              : Output reports only to the stdout
-  -h, --help                    : show help
-  -v, --version,                : Show version
+  --recv_q,   INT    : Minimum Receive Queue in bytes to trigger a report (default: 10000)
+  --send_q,   INT    : Minimum Send Queue in bytes to trigger a report (default: 10000)
+  --refresh,  INT    : Refresh interval in seconds (default: 10)
+  --db_path,  STRING : Path to an SQLite database to log reports to
+  --log_path, STRING : Path to a log file to write reports to
+  --stdout           : Print reports to the console (default)
+  -h, --help         : Show help
+  -v, --version      : Show version
 
   For instance:
 
   qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
   qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
-  qwatcher --recv_q:100000 --send_q:100000 --stdout:true
+  qwatcher --recv_q:100000 --send_q:100000 --stdout
 ```
 
-> Please note that you cannot use `--db_path` and `--log_path` at the same time.
+> Please note that `--db_path`, `--log_path` and `--stdout` are mutually exclusive.
 
 ---
 
@@ -162,7 +220,53 @@ Below output depicts the provided information for a connection:
 
 ![output](https://github.com/pouriyajamshidi/qwatcher/raw/master/images/qwatcher.png)
 
-Apart from the send and receive queues, there are additional information that can be useful to diagnose connectivity issues such as `congestion window`, `mss`, `retransmits` and more.
+Apart from the send and receive queues, the `Info` field carries the numbers that matter
+when diagnosing a stuck queue:
+
+| Field    | Meaning                                                       |
+| -------- | ------------------------------------------------------------- |
+| `skmem`  | `r`/`rb` receive buffer used/limit, `t`/`tb` send buffer used/limit |
+| `rto`    | Retransmission timeout in milliseconds                        |
+| `rtt`    | Round trip time / variance in milliseconds                    |
+| `minrtt` | Lowest round trip time observed on the connection             |
+| `mss`    | Maximum segment size                                          |
+| `cwnd`   | Congestion window in segments                                 |
+| `retrans`| Currently outstanding / total retransmits, shown when non-zero |
+
+## Querying the database
+
+> `sqlite3` needs to be installed.
+
+```bash
+# Open the database file:
+sqlite3 /var/log/qwatcher.db
+# Beautify sqlite output:
+.mode line
+.headers on
+# Connections that had anything waiting in the receive queue:
+sqlite> SELECT * FROM qwatcher WHERE receiveQ > 0 ORDER BY receiveQ DESC;
+# The worst offenders, grouped by process:
+sqlite> SELECT process, MAX(receiveQ), MAX(sendQ), COUNT(*)
+   ...>   FROM qwatcher GROUP BY process ORDER BY 2 DESC;
+```
+
+The schema is:
+
+```sql
+CREATE TABLE qwatcher (
+  id            INTEGER PRIMARY KEY,
+  time          TEXT    NOT NULL,  -- ISO-8601, sorts chronologically
+  state         TEXT    NOT NULL,
+  receiveQ      INTEGER NOT NULL,
+  sendQ         INTEGER NOT NULL,
+  localAddress  TEXT    NOT NULL,
+  localPort     INTEGER NOT NULL,
+  remoteAddress TEXT    NOT NULL,
+  remotePort    INTEGER NOT NULL,
+  process       TEXT    NOT NULL,
+  info          TEXT    NOT NULL
+);
+```
 
 ## Nimble Directory
 
@@ -170,7 +274,7 @@ This project is also hosted on [Nimble](https://nimble.directory/pkg/qwatcher).
 
 ## Tested on
 
-Ubuntu server 22.04.
+Ubuntu server 22.04. Requires Linux 3.3 or newer for the `sock_diag` interface.
 
 ## Sponsor me
 
