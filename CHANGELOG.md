@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.5.2] - 2026-09-12
+
+### Fixed
+
+- The release archive no longer stores a `./` directory entry. Because it did, `tar`
+  tried to apply that entry's mode and timestamp to the directory being extracted into.
+  In a directory the user does not own, such as `/tmp`, that failed with
+  `Cannot utime: Operation not permitted` and `tar` exited non-zero, which aborted the
+  chained install command in the README even though the files had extracted correctly.
+  The 0.5.1 and 0.5.0 archives are affected; extract them somewhere you own, or ignore
+  the non-zero exit since the files themselves unpack correctly.
+
 ## [0.5.1] - 2026-09-12
 
 ### Added
@@ -119,7 +131,8 @@ Nothing yet.
 See the [releases page](https://github.com/pouriyajamshidi/qwatcher/releases) for earlier
 history.
 
-[Unreleased]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pouriyajamshidi/qwatcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/pouriyajamshidi/qwatcher/releases/tag/v0.4.0

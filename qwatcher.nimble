@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.5.1"
+version       = "0.5.2"
 author        = "Pouriya Jamshidi"
 description   = "Linux NIC Buffer Queue Watcher"
 license       = "MIT"
@@ -34,7 +34,14 @@ task release, "Build an optimized binary and bundle it with the systemd unit":
   for file in ["qwatcher.service", "LICENSE"]:
     cpFile file, dist & "/" & file
 
-  exec "tar -czf " & archive & " -C " & dist & " ."
+  # Name the members explicitly. Archiving "." would store a "./" entry, and on
+  # extraction tar would try to apply its mode and timestamp to the destination
+  # directory, which fails with "Cannot utime" in places like /tmp.
+  var members = ""
+  for file in ["qwatcher", "qwatcher.service", "LICENSE"]:
+    members.add " " & file
+
+  exec "tar -czf " & archive & " -C " & dist & members
   rmDir dist
 
   echo "Created " & archive
