@@ -11,7 +11,7 @@
 
 `qwatcher` is designed to help monitor TCP connections and diagnose **buffer** and connectivity issues on Linux machines related to `input` and `output` queues.
 
-It talks to the kernel directly over `NETLINK_SOCK_DIAG` — the same interface `ss` uses — so it has no external dependencies, spawns no processes and parses no command output.
+It talks to the kernel directly over `NETLINK_SOCK_DIAG`, the same interface `ss` uses, so it needs no external tooling, spawns no processes and parses no command output.
 
 ---
 
@@ -50,11 +50,11 @@ Had they had this tool, they would have been able to find the root cause much fa
 
 ## Install
 
-`qwatcher` is a single binary that talks to the kernel directly — it needs no `ss`, no
-`iproute2` and no shell. Beyond `libc`, its only runtime requirement is `libsqlite3`, and
-only when you use `--db_path`. That library ships with virtually every distribution;
-install `libsqlite3-0` (Debian/Ubuntu) or `sqlite-libs` (RHEL/Fedora/Alpine) if it is
-missing.
+`qwatcher` is a single binary that talks to the kernel directly. It needs no `ss`, no
+`iproute2` and no shell. It links against `libc` and loads `libsqlite3` at startup, in
+every mode, so that library must be present even when you are not using `--db_path`. It
+ships with virtually every distribution; install `libsqlite3-0` (Debian/Ubuntu) or
+`sqlite-libs` (RHEL/Fedora/Alpine) if it is missing.
 
 ### From a release
 
@@ -108,7 +108,7 @@ sudo cp qwatcher.service /etc/systemd/system/qwatcher.service && \
   systemctl status qwatcher.service --no-pager
 ```
 
-If you installed with `nimble install`, you only got the binary — fetch the unit first:
+If you installed with `nimble install`, you only got the binary, so fetch the unit first:
 
 ```bash
 sudo curl -fsSL -o /etc/systemd/system/qwatcher.service \
@@ -165,7 +165,7 @@ Both write modes create their file with `0600` permissions, since the reports co
 addresses and processes of every connection on the host.
 
 > :bulb: Run `qwatcher` as `root` to see the process behind each connection. Without it,
-> only your own processes can be identified — everything else is reported as `No process`.
+> only your own processes can be identified, and everything else is reported as `No process`.
 
 > :warning: Make sure to not feed a higher number than your current buffer size to the program.
 
@@ -180,12 +180,23 @@ cat /proc/sys/net/ipv4/tcp_wmem
 
 ### Usage
 
+Two flags carry units that are easy to mix up:
+
+| Flag                   | Unit        | Meaning                                       |
+| ---------------------- | ----------- | --------------------------------------------- |
+| `--recv_q`, `--send_q` | **bytes**   | How full a queue must be to be worth reporting |
+| `--refresh`            | **seconds** | How often to ask the kernel                    |
+
+So `--recv_q:100000` means 100 kB of queued data, not a duration. Timing is controlled
+only by `--refresh`.
+
 Let's explore all modes:
 
 1. check every **5 seconds** and **log** connections that surpass **100 kilobytes** in **send** or **receive** queues to a **database** located at `/var/log/qwatcher.db`:
 
    ```bash
-   qwatcher --recv_q=100000 --send_q=100000 --refresh=5 --db_path=/var/log/qwatcher.db
+   # 100000 bytes of queue; polled every 5 seconds
+   qwatcher --recv_q:100000 --send_q:100000 --refresh:5 --db_path:/var/log/qwatcher.db
    ```
 
    The database is opened in [WAL](https://www.sqlite.org/wal.html) mode, so you can
@@ -195,7 +206,8 @@ Let's explore all modes:
 2. Should you prefer to log the stats in a **log file** instead of a database as shown in step 1 use `--log_path`:
 
    ```bash
-   qwatcher --recv_q=100000 --send_q=100000 --refresh=5 --log_path=/var/log/qwatcher.log
+   # 100000 bytes of queue; polled every 5 seconds
+   qwatcher --recv_q:100000 --send_q:100000 --refresh:5 --log_path:/var/log/qwatcher.log
    ```
 
    Then you can use tail to check the file contents:
@@ -207,7 +219,8 @@ Let's explore all modes:
 3. **Default mode**. If you want the output to be shown on the **console** and not log to disk, use the commands above without `--log_path` or `--db_path` options:
 
    ```bash
-   qwatcher --recv_q=100000 --send_q=100000
+   # 100000 bytes of queue; no --refresh, so the 5 second default applies
+   qwatcher --recv_q:100000 --send_q:100000
    ```
 
    > The default refresh interval is 5 seconds.
@@ -242,11 +255,20 @@ To keep it running in the background, see [Run it as a service](#run-it-as-a-ser
   qwatcher --db_path:/var/log/qwatcher.db --follow
 ```
 
+> `--recv_q` and `--send_q` are in **bytes**; `--refresh` is in **seconds**. A value like
+> `100000` is a queue size, never a duration.
+
 ### Choosing a refresh interval
+
+> :warning: **Upgrading from 0.4.0 or earlier?** `--refresh` used to be read as
+> milliseconds despite being documented as seconds. A `--refresh:10000` that used to mean
+> "ten seconds" now means 10000 seconds, just under three hours. Divide any existing
+> `--refresh` value by 1000, or drop the flag and take the 5 second default. See the
+> [changelog](CHANGELOG.md) for the other breaking changes in 0.5.0.
 
 A poll costs about 9 ms on a host with ~100 connections and about 19 ms with ~4000, plus
 roughly 45 ms to name the processes whenever something actually breaches. So even
-`--refresh:1` costs only a few percent of one core — the real cost of a short interval is
+`--refresh:1` costs only a few percent of one core. The real cost of a short interval is
 row volume in the database, not CPU. The 5 second default is a reasonable standing watch;
 drop to `--refresh:1` while actively chasing a problem.
 
@@ -258,7 +280,31 @@ drop to `--refresh:1` while actively chasing a problem.
 
 Below output depicts the provided information for a connection:
 
-![output](https://github.com/pouriyajamshidi/qwatcher/raw/master/images/qwatcher.png)
+```console
+======================================================================
+Time:           2026-09-12T17:41:12
+State:          ESTAB
+Receive-Q:      0
+Send-Q:         7357
+Local Address:  192.168.1.20:46412
+Remote Address: 203.0.113.10:443
+Process:        code(pid=340003,fd=25)
+Info:           skmem:(r0,rb131072,t0,tb87040) rto:588 rtt:340.990/42.552 minrtt:303.347 mss:1428 cwnd:5 retrans:0/8
+======================================================================
+======================================================================
+Time:           2026-09-12T17:41:12
+State:          CLOSE-WAIT
+Receive-Q:      437
+Send-Q:         0
+Local Address:  [2001:db8:85a3::8a2e:370:7334]:43008
+Remote Address: [2001:db8:f00::347]:443
+Process:        gnome-software(pid=3349,fd=39)
+Info:           skmem:(r2880,rb1536115,t0,tb87040) rto:222 rtt:21.915/4.614 minrtt:10.823 mss:1428 cwnd:10 retrans:0/6
+======================================================================
+```
+
+IPv6 addresses are bracketed so the port stays readable. The same format is used for the
+console, the log file and `--report`.
 
 Apart from the send and receive queues, the `Info` field carries the numbers that matter
 when diagnosing a stuck queue:
@@ -275,7 +321,7 @@ when diagnosing a stuck queue:
 
 ## Querying the database
 
-The quickest way to read a database back is `qwatcher` itself — no `sqlite3` needed, and
+The quickest way to read a database back is `qwatcher` itself. No `sqlite3` is needed, and
 the output is formatted exactly like the log file and the console:
 
 ```bash
@@ -300,7 +346,7 @@ It checks for new rows every `--refresh` seconds, so pair it with the interval t
 is using. Because the database is in WAL mode, all of this works while `qwatcher` is
 running and writing to that same file.
 
-For anything beyond reading reports back — grouping, filtering, aggregating — use `sqlite3`
+For anything beyond reading reports back (grouping, filtering, aggregating), use `sqlite3`
 directly.
 
 > `sqlite3` needs to be installed.
@@ -334,6 +380,7 @@ CREATE TABLE qwatcher (
   process       TEXT    NOT NULL,
   info          TEXT    NOT NULL
 );
+CREATE INDEX qwatcher_time_idx ON qwatcher(time);
 ```
 
 ## Changelog

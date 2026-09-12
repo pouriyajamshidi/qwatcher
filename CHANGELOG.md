@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - 2026-09-12
 
+### Breaking
+
+- **`--refresh` is now read as seconds.** It was previously read as milliseconds while
+  being documented as seconds. An existing `--refresh:10000`, written to mean "ten
+  seconds", now schedules one poll every 10000 seconds, which is just under three hours.
+  Before upgrading, check every script, systemd unit, container command and shell alias
+  that passes `--refresh`, and divide the old value by 1000. Passing no `--refresh` at all
+  is safe and gives the 5 second default.
+- **The database schema changed and old `.db` files are not migrated.** Queue sizes and
+  ports are now `INTEGER` rather than `TEXT`, addresses and ports live in separate
+  columns, and timestamps are ISO-8601. Point `--db_path` at a new file, or move the old
+  database aside. Reusing one fails immediately and safely rather than corrupting it:
+  writing reports it to `table qwatcher has no column named localPort`, and `--report`
+  reports `no such column: localPort`. Neither touches the existing rows.
+- **`--db_path`, `--log_path` and `--stdout` are now mutually exclusive** and validated.
+  Combinations that were previously accepted and silently resolved, such as passing both
+  `--db_path` and `--log_path`, are now rejected with an error.
+
 ### Added
 
 - `nimble release` builds a stripped binary and packages it with the systemd unit and
@@ -51,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ss` is no longer used.** Connection data now comes from the kernel directly over
   `NETLINK_SOCK_DIAG`, the same interface `ss` uses. No subprocess is spawned, no command
   output is parsed and no regular expressions are involved, which also drops the PCRE
-  dependency — the binary now links only against `libc`.
+  dependency. The binary now links only against `libc`.
 - The `Info` field is trimmed to what diagnosing a stuck queue actually needs: `skmem`,
   `rto`, `rtt`, `minrtt`, `mss`, `cwnd` and `retrans`.
 - SQLite handling follows the usual practice for a long running writer. The database is
