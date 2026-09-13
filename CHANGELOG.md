@@ -5,9 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-13
 
-Nothing yet.
+### Added
+
+- `--recv_q` and `--send_q` accept sizes with units, such as `10KB`, `1.5MB` or `64KiB`
+  (`KB` is 1000 bytes, `KiB` is 1024). Plain byte counts like `100000` still work.
 
 ## [0.5.2] - 2026-09-12
 
