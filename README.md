@@ -121,11 +121,14 @@ sudo curl -fsSL -o /etc/systemd/system/qwatcher.service \
   systemctl status qwatcher.service --no-pager
 ```
 
-It starts with these defaults, which you can change at any time:
+It starts with these settings, which you can change at any time:
 
 ```ini
-ExecStart=/usr/local/bin/qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
+ExecStart=/usr/local/bin/qwatcher --recv_q:100KB --send_q:1MB --db_path:/var/log/qwatcher.db
 ```
+
+These are deliberately looser than the 10 kB built-in default so a standing service does
+not fill the database with short spikes and normal bulk transfers.
 
 To use your own thresholds or output path, edit the unit and reload:
 
@@ -187,19 +190,25 @@ Two flags carry units that are easy to mix up:
 
 | Flag                   | Unit        | Meaning                                        |
 | ---------------------- | ----------- | ---------------------------------------------- |
-| `--recv_q`, `--send_q` | **bytes**   | How full a queue must be to be worth reporting |
+| `--recv_q`, `--send_q` | **size**    | How full a queue must be to be worth reporting |
 | `--refresh`            | **seconds** | How often to ask the kernel                    |
 
-So `--recv_q:100000` means 100 kB of queued data, not a duration. Timing is controlled
-only by `--refresh`.
+A size is plain bytes or a number with a unit: `100000`, `100KB`, `1.5MB`, `64KiB`
+(`KB` is 1000 bytes, `KiB` is 1024). Timing is controlled only by `--refresh`.
+
+Both queue thresholds default to **10 kB**. A report is made when **either** queue reaches
+its threshold.
+
+> :bulb: A Receive-Q that stays full means the application is not reading, which is
+> almost always a problem. A Send-Q of hundreds of kB or more is normal during bulk
+> transfers, so a higher send threshold such as `1MB` keeps the noise down.
 
 Let's explore all modes:
 
-1. check every **5 seconds** and **log** connections that surpass **100 kilobytes** in **send** or **receive** queues to a **database** located at `/var/log/qwatcher.db`:
+1. check every **5 seconds** and **log** connections whose **receive** queue reaches **100 kB** or whose **send** queue reaches **1 MB** to a **database** located at `/var/log/qwatcher.db`:
 
    ```bash
-   # 100000 bytes of queue; polled every 5 seconds
-   qwatcher --recv_q:100000 --send_q:100000 --refresh:5 --db_path:/var/log/qwatcher.db
+   qwatcher --recv_q:100KB --send_q:1MB --refresh:5 --db_path:/var/log/qwatcher.db
    ```
 
    The database is opened in [WAL](https://www.sqlite.org/wal.html) mode, so you can
@@ -209,8 +218,7 @@ Let's explore all modes:
 2. Should you prefer to log the stats in a **log file** instead of a database as shown in step 1 use `--log_path`:
 
    ```bash
-   # 100000 bytes of queue; polled every 5 seconds
-   qwatcher --recv_q:100000 --send_q:100000 --refresh:5 --log_path:/var/log/qwatcher.log
+   qwatcher --recv_q:100KB --send_q:1MB --refresh:5 --log_path:/var/log/qwatcher.log
    ```
 
    Then you can use tail to check the file contents:
@@ -222,11 +230,9 @@ Let's explore all modes:
 3. **Default mode**. If you want the output to be shown on the **console** and not log to disk, use the commands above without `--log_path` or `--db_path` options:
 
    ```bash
-   # 100000 bytes of queue; no --refresh, so the 5 second default applies
-   qwatcher --recv_q:100000 --send_q:100000
+   # no --refresh, so the 5 second default applies
+   qwatcher --recv_q:100KB --send_q:1MB
    ```
-
-   > The default refresh interval is 5 seconds.
 
 The sample output can be seen [here](#what)
 
@@ -235,8 +241,8 @@ To keep it running in the background, see [Run it as a service](#run-it-as-a-ser
 ### Available flags
 
 ```console
-  --recv_q,   INT    : Minimum Receive Queue in bytes to trigger a report (default: 10000)
-  --send_q,   INT    : Minimum Send Queue in bytes to trigger a report (default: 10000)
+  --recv_q,   SIZE   : Minimum Receive Queue to trigger a report (default: 10KB)
+  --send_q,   SIZE   : Minimum Send Queue to trigger a report (default: 10KB)
   --refresh,  INT    : Refresh interval in seconds (default: 5)
   --db_path,  STRING : Path to an SQLite database to log reports to
   --log_path, STRING : Path to a log file to write reports to
@@ -249,17 +255,19 @@ To keep it running in the background, see [Run it as a service](#run-it-as-a-ser
 
   For instance:
 
-  qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
-  qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
-  qwatcher --recv_q:100000 --send_q:100000 --stdout
+  qwatcher --recv_q:100KB --send_q:1MB --db_path:/var/log/qwatcher.db
+  qwatcher --recv_q:100KB --send_q:1MB --log_path:/var/log/qwatcher.log
+  qwatcher --recv_q:100KB --send_q:1MB --stdout
+
+  SIZE is bytes, or a number with a unit: 10KB, 1.5MB, 64KiB (KB = 1000, KiB = 1024).
 
   qwatcher --db_path:/var/log/qwatcher.db --report
   qwatcher --db_path:/var/log/qwatcher.db --report --limit:100
   qwatcher --db_path:/var/log/qwatcher.db --follow
 ```
 
-> `--recv_q` and `--send_q` are in **bytes**; `--refresh` is in **seconds**. A value like
-> `100000` is a queue size, never a duration.
+> `--recv_q` and `--send_q` are **sizes**; `--refresh` is in **seconds**. A value like
+> `100KB` is a queue size, never a duration.
 
 ### Choosing a refresh interval
 

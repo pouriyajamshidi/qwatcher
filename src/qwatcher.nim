@@ -1,4 +1,4 @@
-import std/[os, posix, sets, strformat, strutils, tables, times]
+import std/[os, parseutils, posix, sets, strformat, strutils, tables, times]
 import db_connector/db_sqlite
 import tcpdiag
 
@@ -55,8 +55,8 @@ var running = true
 
 proc usage(exitCode: int = 0) =
   echo """
-  --recv_q,   INT    : Minimum Receive Queue in bytes to trigger a report (default: 10000)
-  --send_q,   INT    : Minimum Send Queue in bytes to trigger a report (default: 10000)
+  --recv_q,   SIZE   : Minimum Receive Queue to trigger a report (default: 10KB)
+  --send_q,   SIZE   : Minimum Send Queue to trigger a report (default: 10KB)
   --refresh,  INT    : Refresh interval in seconds (default: 5)
   --db_path,  STRING : Path to an SQLite database to log reports to
   --log_path, STRING : Path to a log file to write reports to
@@ -69,9 +69,11 @@ proc usage(exitCode: int = 0) =
 
   For instance:
 
-  qwatcher --recv_q:100000 --send_q:100000 --db_path:/var/log/qwatcher.db
-  qwatcher --recv_q:100000 --send_q:100000 --log_path:/var/log/qwatcher.log
-  qwatcher --recv_q:100000 --send_q:100000 --stdout
+  qwatcher --recv_q:100KB --send_q:1MB --db_path:/var/log/qwatcher.db
+  qwatcher --recv_q:100KB --send_q:1MB --log_path:/var/log/qwatcher.log
+  qwatcher --recv_q:100KB --send_q:1MB --stdout
+
+  SIZE is bytes, or a number with a unit: 10KB, 1.5MB, 64KiB (KB = 1000, KiB = 1024).
 
   qwatcher --db_path:/var/log/qwatcher.db --report
   qwatcher --db_path:/var/log/qwatcher.db --report --limit:100
@@ -94,6 +96,18 @@ proc positiveInt(key, value: string, fallback: int): int =
     fail(&"--{key} expects a number, got '{value}'")
   if result <= 0:
     fail(&"--{key} must be greater than zero")
+
+
+proc sizeFlag(key, value: string, fallback: int): int =
+  ## Accepts plain bytes or a unit: 10KB, 1.5MB, 64KiB.
+  if value.len == 0:
+    return fallback
+  var size: int64
+  if parseSize(value, size) != value.len:
+    fail(&"--{key} expects a size like 10000, 10KB or 1MB, got '{value}'")
+  if size <= 0:
+    fail(&"--{key} must be greater than zero")
+  result = int(size)
 
 
 proc boolFlag(key, value: string): bool =
@@ -122,8 +136,8 @@ proc getArgs(): Flags =
       case parser.key
       of "help", "h": usage()
       of "version", "v": echo "Version: ", VERSION; quit()
-      of "recv_q": result.recvQ = positiveInt(parser.key, parser.val, DEFAULT_QUEUE)
-      of "send_q": result.sendQ = positiveInt(parser.key, parser.val, DEFAULT_QUEUE)
+      of "recv_q": result.recvQ = sizeFlag(parser.key, parser.val, DEFAULT_QUEUE)
+      of "send_q": result.sendQ = sizeFlag(parser.key, parser.val, DEFAULT_QUEUE)
       of "refresh": result.refresh = positiveInt(parser.key, parser.val, DEFAULT_REFRESH)
       of "db_path": dbPath = parser.val
       of "log_path": logPath = parser.val
