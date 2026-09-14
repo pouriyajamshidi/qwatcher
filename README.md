@@ -295,8 +295,8 @@ Below output depicts the provided information for a connection:
 ======================================================================
 Time:           2026-09-12T17:41:12
 State:          ESTAB
-Receive-Q:      0
-Send-Q:         7357
+Receive-Q:      0 B
+Send-Q:         7.185 KiB
 Local Address:  192.168.1.20:46412
 Remote Address: 203.0.113.10:443
 Process:        code(pid=340003,fd=25)
@@ -305,8 +305,8 @@ Info:           skmem:(r0,rb131072,t0,tb87040) rto:588 rtt:340.990/42.552 minrtt
 ======================================================================
 Time:           2026-09-12T17:41:12
 State:          CLOSE-WAIT
-Receive-Q:      437
-Send-Q:         0
+Receive-Q:      437 B
+Send-Q:         0 B
 Local Address:  [2001:db8:85a3::8a2e:370:7334]:43008
 Remote Address: [2001:db8:f00::347]:443
 Process:        gnome-software(pid=3349,fd=39)

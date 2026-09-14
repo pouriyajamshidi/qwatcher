@@ -179,8 +179,8 @@ proc report(conn: Conn, timestamp: string): string =
   &"""{DELIM}
 Time:           {timestamp}
 State:          {conn.state}
-Receive-Q:      {conn.recvQ}
-Send-Q:         {conn.sendQ}
+Receive-Q:      {formatSize(conn.recvQ, includeSpace = true)}
+Send-Q:         {formatSize(conn.sendQ, includeSpace = true)}
 Local Address:  {endpoint(conn.localAddr, conn.localPort)}
 Remote Address: {endpoint(conn.peerAddr, conn.peerPort)}
 Process:        {conn.process}
