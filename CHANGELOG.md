@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-09-26
+
+### Fixed
+
+- The Nim requirement is lowered to `2.0.0`, the oldest version qwatcher builds and runs
+  with. Requiring `2.2.12` made Nimble download its own copy of Nim for anyone on an older
+  compiler, and Nimble releases before 0.22 crash on that step when a stray `.git`
+  directory sits above `~/.nimble`, such as `~/.git`
+  ([#5](https://github.com/pouriyajamshidi/qwatcher/issues/5)).
+
 ## [0.7.0] - 2026-09-14
 
 ### Changed
